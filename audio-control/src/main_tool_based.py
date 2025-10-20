@@ -31,7 +31,7 @@ class ToolBasedVoiceControl:
         self.configs = self._load_configs()
         
         # Initialize components
-        print("\\n📦 Initializing components...\\n")
+        print("\n📦 Initializing components...\n")
         
         # 1. Audio system
         self.audio_capture = AudioCapture(self.configs['audio'])
@@ -54,8 +54,8 @@ class ToolBasedVoiceControl:
         # State
         self.running = False
         
-        print("\\n✓ All components initialized successfully!")
-        print("\\n" + "=" * 60 + "\\n")
+        print("\n✓ All components initialized successfully!")
+        print("\n" + "=" * 60 + "\n")
         
         # Display command reference
         print_command_reference()
@@ -87,7 +87,7 @@ class ToolBasedVoiceControl:
     
     def _print_available_tools(self):
         """Print all available tools"""
-        print("\\n🔧 AVAILABLE TOOLS:")
+        print("\n🔧 AVAILABLE TOOLS:")
         print("=" * 60)
         tools = self.robot_tools.list_all_tools()
         
@@ -100,25 +100,25 @@ class ToolBasedVoiceControl:
         }
         
         for category, tool_names in categories.items():
-            print(f"\\n{category}:")
+            print(f"\n{category}:")
             for tool_name in tool_names:
                 if tool_name in tools:
                     tool_info = self.robot_tools.get_tool_info(tool_name)
                     print(f"  • {tool_name}: {tool_info['description']}")
         
-        print("\\n" + "=" * 60)
+        print("\n" + "=" * 60)
     
     def run(self):
         """Run the main control loop"""
         self.running = True
         
-        print("\\n🎤 TOOL-BASED VOICE CONTROL READY!")
+        print("\n🎤 TOOL-BASED VOICE CONTROL READY!")
         print("   Features:")
         print("   • LLM function calling for intelligent command processing")
         print("   • Command queue - say multiple commands, they'll execute in order")
         print("   • Tool-based architecture - each joint is a separate tool")
         print("   • Say 'list tools' to see all available tools")
-        print("   • Say 'queue status' to check command queue\\n")
+        print("   • Say 'queue status' to check command queue\n")
         
         try:
             # Start the command queue
@@ -142,7 +142,7 @@ class ToolBasedVoiceControl:
                 time.sleep(0.5)
         
         except KeyboardInterrupt:
-            print("\\n\\n🛑 Shutting down...")
+            print("\n\n🛑 Shutting down...")
         
         finally:
             self.cleanup()
@@ -150,7 +150,7 @@ class ToolBasedVoiceControl:
     def run_once(self) -> bool:
         """Process one voice command"""
         try:
-            print("\\n👂 Listening for voice command...")
+            print("\n👂 Listening for voice command...")
             print("   (Speak now or press Ctrl+C to exit)")
             
             # Start timing for latency tracking
@@ -175,7 +175,7 @@ class ToolBasedVoiceControl:
                 return True
             
             transcribe_time = time_module.time()
-            print(f"📝 You said: \\"{text}\\"")
+            print(f"📝 You said: \"{text}\"")
             
             # Process with LLM to get tool calls
             tool_calls, explanation = self.llm_executor.process_and_explain(text)
@@ -199,7 +199,7 @@ class ToolBasedVoiceControl:
             tts_start_time = time_module.time()
             
             # Print latency breakdown
-            print(f"\\n⏱️  LATENCY BREAKDOWN:")
+            print(f"\n⏱️  LATENCY BREAKDOWN:")
             print(f"   • Audio capture: {(capture_time - start_time):.2f}s")
             print(f"   • STT (faster-whisper): {(transcribe_time - capture_time):.2f}s")
             print(f"   • LLM (gpt-4o-mini): {(llm_time - transcribe_time):.2f}s")
@@ -210,17 +210,17 @@ class ToolBasedVoiceControl:
             return True
             
         except KeyboardInterrupt:
-            print("\\n\\n🛑 Interrupted by user")
+            print("\n\n🛑 Interrupted by user")
             return False
         except Exception as e:
-            print(f"\\n❌ Error: {e}")
+            print(f"\n❌ Error: {e}")
             import traceback
             traceback.print_exc()
             return True
     
     def cleanup(self):
         """Cleanup all resources"""
-        print("\\n🧹 Cleaning up...")
+        print("\n🧹 Cleaning up...")
         
         # Stop the queue
         self.command_queue.stop()
@@ -250,7 +250,7 @@ class ToolBasedVoiceControl:
         self.robot.disconnect()
         
         print("✓ Cleanup complete")
-        print("\\nThank you for using the tool-based voice control system!")
+        print("\nThank you for using the tool-based voice control system!")
 
 
 def main():
@@ -261,7 +261,7 @@ def main():
         app.run()
     
     except Exception as e:
-        print(f"\\n❌ Fatal error: {e}")
+        print(f"\n❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
