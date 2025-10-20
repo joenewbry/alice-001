@@ -48,6 +48,10 @@ class AudioCapture:
         self.is_recording = False
         self.recorded_frames = []
         
+        # Muting (to prevent capturing our own TTS output)
+        self.is_muted = False
+        self._mute_lock = threading.Lock()
+        
         print(f"✓ Audio capture initialized: {self.sample_rate}Hz, device: {self.device_index}")
     
     def _find_device(self) -> Optional[int]:
@@ -66,6 +70,23 @@ class AudioCapture:
         
         print(f"⚠️ Waveshare device not found, using default input device")
         return None
+    
+    def mute(self):
+        """
+        Mute the microphone (prevent recording).
+        Used to prevent capturing our own TTS output.
+        """
+        with self._mute_lock:
+            self.is_muted = True
+            print("🔇 Microphone muted (preventing audio feedback)")
+    
+    def unmute(self):
+        """
+        Unmute the microphone (allow recording).
+        """
+        with self._mute_lock:
+            self.is_muted = False
+            print("🔊 Microphone unmuted (ready for input)")
     
     def start_stream(self):
         """Start audio input stream"""
@@ -101,8 +122,12 @@ class AudioCapture:
             callback: Optional callback for audio level updates
             
         Returns:
-            Audio data as bytes
+            Audio data as bytes, or None if muted
         """
+        # Check if muted (don't record our own TTS output)
+        with self._mute_lock:
+            if self.is_muted:
+                return None
         if self.stream is None:
             self.start_stream()
         

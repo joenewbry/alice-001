@@ -129,8 +129,11 @@ class ToolBasedVoiceControl:
             self.robot.motion.center_all()
             time.sleep(1)
             
-            # Greeting (non-blocking for faster startup)
-            self.text_to_speech.speak("Hello! Tool-based voice control is ready. You can queue multiple commands.", blocking=False)
+            # Greeting (mute mic to prevent feedback)
+            self.audio_capture.mute()
+            self.text_to_speech.speak("Hello! Tool-based voice control is ready. You can queue multiple commands.", blocking=True)
+            time.sleep(0.5)  # Grace period for echo to dissipate
+            self.audio_capture.unmute()
             
             # Main loop
             while self.running:
@@ -183,18 +186,30 @@ class ToolBasedVoiceControl:
             llm_time = time_module.time()
             
             if not tool_calls:
-                self.text_to_speech.speak("I'm not sure what you want me to do. Try saying 'list tools' to see what I can do.", stream=True)
+                # Mute before speaking to prevent feedback
+                self.audio_capture.mute()
+                try:
+                    self.text_to_speech.speak("I'm not sure what you want me to do. Try saying 'list tools' to see what I can do.", stream=True, blocking=True)
+                    time.sleep(0.5)  # Grace period
+                finally:
+                    self.audio_capture.unmute()
                 return True
             
             # Add to queue (robot starts executing immediately in background)
             task_id = self.command_queue.add_task(text, tool_calls)
             
-            # Confirm with streaming (lower latency, non-blocking so robot can move in parallel)
+            # Confirm with streaming (mute to prevent feedback)
             queue_size = self.command_queue.get_queue_status()['queue_size']
-            if queue_size > 1:
-                self.text_to_speech.speak(f"{explanation}. Added to queue, {queue_size} commands pending.", blocking=False, stream=True)
-            else:
-                self.text_to_speech.speak(f"{explanation}", blocking=False, stream=True)
+            
+            self.audio_capture.mute()
+            try:
+                if queue_size > 1:
+                    self.text_to_speech.speak(f"{explanation}. Added to queue, {queue_size} commands pending.", blocking=True, stream=True)
+                else:
+                    self.text_to_speech.speak(f"{explanation}", blocking=True, stream=True)
+                time.sleep(0.5)  # Grace period for acoustic echo to dissipate
+            finally:
+                self.audio_capture.unmute()
             
             tts_start_time = time_module.time()
             
