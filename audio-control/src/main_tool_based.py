@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Import all modules
-from audio import AudioCapture, SpeechToText, TextToSpeech
+from audio import AudioCapture, FasterWhisperSTT, TextToSpeech
 from robot import HiwonderS1Controller
 from tools import RobotTools, CommandQueue, LLMExecutor
 from command_reference import print_command_reference
@@ -35,8 +35,8 @@ class ToolBasedVoiceControl:
         
         # 1. Audio system
         self.audio_capture = AudioCapture(self.configs['audio'])
-        self.speech_to_text = SpeechToText(model_name="base")
-        self.text_to_speech = TextToSpeech(voice="alloy")
+        self.speech_to_text = FasterWhisperSTT(model_size="base", device="cpu", compute_type="int8")
+        self.text_to_speech = TextToSpeech(voice="alloy", model="tts-1")  # tts-1 is faster
         
         # 2. Robot controller
         self.robot = HiwonderS1Controller(self.configs['robot'])
@@ -47,8 +47,8 @@ class ToolBasedVoiceControl:
         # 4. Command queue
         self.command_queue = CommandQueue(self.robot_tools, max_queue_size=10)
         
-        # 5. LLM executor
-        self.llm_executor = LLMExecutor(self.robot_tools, model="gpt-4o")
+        # 5. LLM executor (uses gpt-4o-mini by default for speed)
+        self.llm_executor = LLMExecutor(self.robot_tools)
         self.llm_executor.set_command_queue(self.command_queue)
         
         # State
@@ -129,8 +129,8 @@ class ToolBasedVoiceControl:
             self.robot.motion.center_all()
             time.sleep(1)
             
-            # Greeting
-            self.text_to_speech.speak("Hello! Tool-based voice control is ready. You can queue multiple commands.")
+            # Greeting (non-blocking for faster startup)
+            self.text_to_speech.speak("Hello! Tool-based voice control is ready. You can queue multiple commands.", blocking=False)
             
             # Main loop
             while self.running:
@@ -153,12 +153,18 @@ class ToolBasedVoiceControl:
             print("\\n👂 Listening for voice command...")
             print("   (Speak now or press Ctrl+C to exit)")
             
+            # Start timing for latency tracking
+            import time as time_module
+            start_time = time_module.time()
+            
             # Capture audio
             audio_data = self.audio_capture.record_utterance()
             
             if not audio_data:
                 print("⚠️ No audio captured")
                 return True
+            
+            capture_time = time_module.time()
             
             # Transcribe
             print("🔄 Transcribing...")
@@ -168,24 +174,38 @@ class ToolBasedVoiceControl:
                 print("⚠️ Could not transcribe audio")
                 return True
             
+            transcribe_time = time_module.time()
             print(f"📝 You said: \\"{text}\\"")
             
             # Process with LLM to get tool calls
             tool_calls, explanation = self.llm_executor.process_and_explain(text)
             
+            llm_time = time_module.time()
+            
             if not tool_calls:
-                self.text_to_speech.speak("I'm not sure what you want me to do. Try saying 'list tools' to see what I can do.")
+                self.text_to_speech.speak("I'm not sure what you want me to do. Try saying 'list tools' to see what I can do.", stream=True)
                 return True
             
-            # Add to queue
+            # Add to queue (robot starts executing immediately in background)
             task_id = self.command_queue.add_task(text, tool_calls)
             
-            # Confirm
+            # Confirm with streaming (lower latency, non-blocking so robot can move in parallel)
             queue_size = self.command_queue.get_queue_status()['queue_size']
             if queue_size > 1:
-                self.text_to_speech.speak(f"{explanation}. Added to queue, {queue_size} commands pending.")
+                self.text_to_speech.speak(f"{explanation}. Added to queue, {queue_size} commands pending.", blocking=False, stream=True)
             else:
-                self.text_to_speech.speak(f"{explanation}")
+                self.text_to_speech.speak(f"{explanation}", blocking=False, stream=True)
+            
+            tts_start_time = time_module.time()
+            
+            # Print latency breakdown
+            print(f"\\n⏱️  LATENCY BREAKDOWN:")
+            print(f"   • Audio capture: {(capture_time - start_time):.2f}s")
+            print(f"   • STT (faster-whisper): {(transcribe_time - capture_time):.2f}s")
+            print(f"   • LLM (gpt-4o-mini): {(llm_time - transcribe_time):.2f}s")
+            print(f"   • TTS start (streaming): {(tts_start_time - llm_time):.2f}s")
+            print(f"   📊 Total to audio output: {(tts_start_time - start_time):.2f}s")
+            print(f"   🎯 Target: < 2.0s")
             
             return True
             

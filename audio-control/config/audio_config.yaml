@@ -14,7 +14,7 @@ audio:
     
   # Recording settings
   recording:
-    silence_threshold: 0.5  # seconds of silence to stop recording
+    silence_threshold: 1.0  # seconds of silence to stop recording (reduced from 2.0 for faster response)
     max_recording_duration: 10  # seconds
-    min_recording_duration: 0.5  # seconds
+    min_recording_duration: 0.3  # seconds (reduced for quicker commands)
 

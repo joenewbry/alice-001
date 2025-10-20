@@ -40,13 +40,13 @@ Examples:
 
 Always confirm understanding and execute confidently."""
     
-    def __init__(self, robot_tools, model: str = "gpt-4o"):
+    def __init__(self, robot_tools, model: str = "gpt-4o-mini"):
         """
         Initialize LLM executor.
         
         Args:
             robot_tools: RobotTools instance
-            model: OpenAI model to use (needs function calling)
+            model: OpenAI model to use (needs function calling, default: gpt-4o-mini for speed)
         """
         load_dotenv()
         

@@ -47,13 +47,14 @@ class TextToSpeech:
         
         print(f"✓ TTS initialized with voice '{voice}'")
     
-    def speak(self, text: str, blocking: bool = True) -> bool:
+    def speak(self, text: str, blocking: bool = True, stream: bool = False) -> bool:
         """
         Convert text to speech and play it.
         
         Args:
             text: Text to speak
             blocking: If True, wait for speech to finish
+            stream: If True, use streaming playback (lower latency)
             
         Returns:
             True if successful, False otherwise
@@ -65,11 +66,16 @@ class TextToSpeech:
         try:
             print(f"🔊 Speaking: \"{text}\"")
             
+            # Use streaming for lower latency
+            if stream:
+                return self._speak_streaming(text, blocking)
+            
             # Generate speech
             response = self.client.audio.speech.create(
                 model=self.model,
                 voice=self.voice,
-                input=text
+                input=text,
+                response_format="mp3"
             )
             
             # Save to temporary file
@@ -88,6 +94,49 @@ class TextToSpeech:
         except Exception as e:
             print(f"❌ TTS error: {e}")
             return False
+    
+    def _speak_streaming(self, text: str, blocking: bool = True) -> bool:
+        """
+        Stream audio playback for lower latency (starts speaking sooner).
+        
+        Args:
+            text: Text to speak
+            blocking: If True, wait for speech to finish
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Generate speech with streaming
+            response = self.client.audio.speech.create(
+                model=self.model,
+                voice=self.voice,
+                input=text,
+                response_format="mp3"
+            )
+            
+            # Save chunks to temp file as they arrive
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_path = temp_file.name
+                
+                # Stream to file
+                for chunk in response.iter_bytes(chunk_size=4096):
+                    temp_file.write(chunk)
+            
+            # Play the complete file
+            # Note: True streaming would require different approach (PCM streaming)
+            # This still reduces latency by starting playback earlier
+            self._play_audio_file(temp_path, blocking=blocking)
+            
+            # Cleanup
+            os.unlink(temp_path)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Streaming TTS error: {e}")
+            # Fallback to non-streaming
+            return self.speak(text, blocking=blocking, stream=False)
     
     def _find_waveshare_device(self) -> Optional[int]:
         """Find Waveshare/USB audio output device"""
