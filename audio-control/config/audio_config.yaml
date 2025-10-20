@@ -1,0 +1,20 @@
+audio:
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1024
+  format: int16
+  device_name: "Waveshare USB Audio"
+  
+  # Voice Activity Detection
+  vad:
+    enabled: false  # Disabled - using energy-based detection instead
+    aggressiveness: 1  # 0-3, lower = more sensitive
+    frame_duration_ms: 30
+    padding_duration_ms: 300
+    
+  # Recording settings
+  recording:
+    silence_threshold: 0.5  # seconds of silence to stop recording
+    max_recording_duration: 10  # seconds
+    min_recording_duration: 0.5  # seconds
+

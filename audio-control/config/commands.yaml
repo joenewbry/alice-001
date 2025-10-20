@@ -1,0 +1,58 @@
+commands:
+  # Directional movement commands
+  directional:
+    - pattern: "move (left|right)"
+      joint: "base"
+      action: "rotate"
+      amounts: ["small", "medium", "large"]
+    - pattern: "move (up|down)"
+      joints: ["shoulder", "elbow"]
+      action: "lift"
+      amounts: ["small", "medium", "large"]
+    - pattern: "move (forward|back)"
+      joint: "elbow"
+      action: "extend"
+      amounts: ["small", "medium", "large"]
+  
+  # Joint-specific commands
+  joint_specific:
+    - pattern: "rotate base"
+      joint: "base"
+    - pattern: "move shoulder"
+      joint: "shoulder"
+    - pattern: "move elbow"
+      joint: "elbow"
+    - pattern: "move wrist"
+      joint: "wrist"
+  
+  # Gripper commands
+  gripper:
+    - patterns: ["grasp", "grab", "close gripper"]
+      action: "close"
+    - patterns: ["release", "open gripper"]
+      action: "open"
+  
+  # Gesture commands
+  gestures:
+    - patterns: ["please dance", "dance"]
+      gesture: "dance"
+    - patterns: ["please wiggle", "wiggle"]
+      gesture: "wiggle"
+    - patterns: ["please nod", "nod"]
+      gesture: "nod"
+  
+  # System commands
+  system:
+    - patterns: ["center", "home", "reset"]
+      action: "center"
+    - patterns: ["stop", "emergency stop", "halt"]
+      action: "emergency_stop"
+    - patterns: ["repeat", "do that again"]
+      action: "repeat"
+  
+  # Amount keywords
+  amounts:
+    small: ["small", "little", "bit", "slightly", "tiny"]
+    medium: ["medium", "moderate", "normal"]
+    large: ["large", "lot", "big", "much", "very"]
+

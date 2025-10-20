@@ -1,0 +1,42 @@
+robot:
+  # Servo configuration
+  servos:
+    base:
+      id: 6
+      min_angle: -90
+      max_angle: 90
+      center: 0  # Base stays centered (straight forward)
+    shoulder:
+      id: 5
+      min_angle: -90
+      max_angle: 90
+      center: -45  # Raised up from hanging position
+    elbow:
+      id: 4
+      min_angle: -90
+      max_angle: 90
+      center: -60  # Bent inward (compact position)
+    wrist:
+      id: 3
+      min_angle: -90
+      max_angle: 90
+      center: 0  # Wrist neutral
+    gripper:
+      id: 1
+      min_angle: 0
+      max_angle: 100
+      center: 30  # Slightly open (not fully closed or open)
+  
+  # Motion parameters
+  motion:
+    small: 15
+    medium: 45
+    large: 75
+    default_speed: 800  # milliseconds
+    
+  # Safety limits
+  safety:
+    max_speed: 180  # degrees per second
+    collision_threshold: 80  # servo load percentage
+    timeout_seconds: 60
+
