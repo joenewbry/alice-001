@@ -137,7 +137,7 @@ class AudioCapture:
         triggered = False
         
         voiced_frames = []
-        num_unvoiced = 0
+        consecutive_silence = 0
         silence_frames_needed = int(self.silence_threshold * self.sample_rate / self.chunk_size)
         
         start_time = time.time()
@@ -165,25 +165,27 @@ class AudioCapture:
                 num_voiced = len([f for f, speech in ring_buffer if speech])
                 
                 # Start recording when speech detected
-                if num_voiced > 0.8 * ring_buffer.maxlen:
+                if num_voiced > 0.5 * ring_buffer.maxlen:  # Lower threshold (was 0.8)
                     triggered = True
                     print("🗣️ Speech detected, recording...")
                     # Add buffered frames
                     for f, _ in ring_buffer:
                         voiced_frames.append(f)
                     ring_buffer.clear()
+                    consecutive_silence = 0
             else:
                 voiced_frames.append(audio_chunk)
-                ring_buffer.append((audio_chunk, is_speech))
                 
-                # Check for end of speech
-                num_unvoiced = len([f for f, speech in ring_buffer if not speech])
+                # Track consecutive silence frames
+                if not is_speech:
+                    consecutive_silence += 1
+                else:
+                    consecutive_silence = 0  # Reset on speech
                 
-                if num_unvoiced > 0.8 * ring_buffer.maxlen:
-                    num_unvoiced += 1
-                    if num_unvoiced >= silence_frames_needed:
-                        print("🔇 Silence detected, stopping recording")
-                        break
+                # End recording after sustained silence
+                if consecutive_silence >= silence_frames_needed:
+                    print(f"🔇 Silence detected ({consecutive_silence} frames), stopping recording")
+                    break
             
             # Audio level callback
             if callback:
@@ -207,9 +209,32 @@ class AudioCapture:
         
         # Use energy-based detection if VAD is disabled or for low-level audio
         if not self.config['vad'].get('enabled', True):
-            # Very low threshold for quieter microphones (50 = almost any sound)
-            threshold = 50
-            is_speech = energy > threshold
+            # Use adaptive threshold with hysteresis
+            # Speech typically has energy > 100, silence < 40
+            if not hasattr(self, '_speech_threshold'):
+                self._speech_threshold = 70  # Initial threshold
+                self._silence_threshold = 35  # Lower threshold for silence
+                self._energy_history = []
+            
+            self._energy_history.append(energy)
+            if len(self._energy_history) > 50:
+                self._energy_history.pop(0)
+                # Adaptive threshold based on recent energy
+                avg_energy = sum(self._energy_history) / len(self._energy_history)
+                self._speech_threshold = max(60, avg_energy * 1.5)
+                self._silence_threshold = max(30, avg_energy * 0.7)
+            
+            # Hysteresis: use different thresholds for detecting speech vs silence
+            if hasattr(self, '_was_speech'):
+                if self._was_speech:
+                    is_speech = energy > self._silence_threshold  # Stay in speech until energy drops low
+                else:
+                    is_speech = energy > self._speech_threshold  # Need higher energy to trigger speech
+            else:
+                is_speech = energy > self._speech_threshold
+            
+            self._was_speech = is_speech
+            
             # Debug output every 20th frame
             if hasattr(self, '_debug_counter'):
                 self._debug_counter += 1
@@ -217,7 +242,7 @@ class AudioCapture:
                 self._debug_counter = 0
             if self._debug_counter % 20 == 0:
                 status = "🔊" if is_speech else "🔇"
-                print(f"  Energy: {energy:6.1f} {status}")
+                print(f"  Energy: {energy:6.1f} {status} (thresh: {self._speech_threshold:.1f}/{self._silence_threshold:.1f})")
             return is_speech
         
         try:

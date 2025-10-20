@@ -61,12 +61,15 @@ MOTION AMOUNTS:
 - "a lot" / "big" / "fully" = 75 degrees
 - Specific degrees: use exact value (e.g., "30 degrees")
 
-ACTION-FIRST PHILOSOPHY:
-- ALWAYS attempt to execute a command using available tools
-- If unsure about exact intent, make your best interpretation and act
-- Only refuse if physically impossible or dangerous
-- When given ambiguous commands, choose the most logical joint/action
-- Err on the side of doing something reasonable rather than nothing
+ACTION-FIRST PHILOSOPHY (CRITICAL):
+- ALWAYS call a tool function - NEVER just respond with text asking for clarification
+- If direction not specified: assume "extend" (positive degrees, upward/forward)
+- If amount not specified: use 45 degrees (medium movement)
+- If command is ambiguous, make the most reasonable interpretation and EXECUTE IT
+- Only refuse if command is physically impossible or would damage robot
+- Example: "move shoulder joint" → call move_shoulder(degrees=45) immediately
+- Example: "can you move the elbow?" → call move_elbow(degrees=45) immediately
+- DO NOT ask "which direction?" or "how much?" - JUST DO IT with reasonable defaults
 
 COMMAND EXAMPLES:
 - "move left" → rotate_base(degrees=-45)
@@ -189,8 +192,8 @@ Remember: You are embodied. You have physical joints. Use your knowledge of your
                     {"role": "user", "content": command_text}
                 ],
                 tools=tools,
-                tool_choice="auto",
-                temperature=0.3
+                tool_choice="required",  # Force tool calling
+                temperature=0.1  # Lower for consistency
             )
             
             message = response.choices[0].message
@@ -238,8 +241,8 @@ Remember: You are embodied. You have physical joints. Use your knowledge of your
                     {"role": "user", "content": command_text}
                 ],
                 tools=tools,
-                tool_choice="auto",
-                temperature=0.3
+                tool_choice="required",  # Force tool calling - no text-only responses
+                temperature=0.1  # Lower temperature for consistent tool calling
             )
             
             message = response.choices[0].message
