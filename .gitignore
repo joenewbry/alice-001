@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
+
+# Build/runtime artifacts
+logs/videos/
+logs/recovery/*.tar.gz
+logs/**/*.log
+*.log
+
+# Isaac/rl temp outputs
+rl_task/logs/
+rl_task/runs/
+rl_task/checkpoints/

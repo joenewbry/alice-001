@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alice-ball-transfer"
+version = "0.1.0"
+description = "Isaac Lab RL task: Alice 001 ball transfer"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["alice_ball_transfer*"]
