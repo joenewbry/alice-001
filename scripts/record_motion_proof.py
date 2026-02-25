@@ -143,6 +143,8 @@ def main():
     wrist_frames = []
 
     ball_z_series = []
+    joint_series = []
+    ee_series = []
     for step in range(args_cli.num_steps):
         if args_cli.mode == "sweep":
             actions = torch.zeros(n_envs, n_actions, device=device)
@@ -162,6 +164,8 @@ def main():
         ball = raw_env._get_ball_pos_local()[0].detach().cpu().numpy()
         dist = float(np.linalg.norm(ee - ball))
         ball_z_series.append(float(ball[2]))
+        joint_series.append(jp.copy())
+        ee_series.append(ee.copy())
 
         overlay = (
             f"step={step} b={jp[0]:+.2f} s={jp[1]:+.2f} e={jp[2]:+.2f} "
@@ -187,6 +191,11 @@ def main():
         save_video(wrist_frames, os.path.join(out_dir, f"{args_cli.mode}_wrist.mp4"), args_cli.fps)
 
     # Save lightweight telemetry summary
+    joint_arr = np.asarray(joint_series, dtype=np.float32) if joint_series else np.zeros((0, 7), dtype=np.float32)
+    ee_arr = np.asarray(ee_series, dtype=np.float32) if ee_series else np.zeros((0, 3), dtype=np.float32)
+    joint_ranges = (joint_arr.max(axis=0) - joint_arr.min(axis=0)).tolist() if joint_arr.size else []
+    ee_disp_norm = float(np.linalg.norm(ee_arr.max(axis=0) - ee_arr.min(axis=0))) if ee_arr.size else 0.0
+
     summary = {
         "mode": args_cli.mode,
         "steps": args_cli.num_steps,
@@ -195,6 +204,9 @@ def main():
         "ball_z_min": float(np.min(ball_z_series)) if ball_z_series else None,
         "ball_z_max": float(np.max(ball_z_series)) if ball_z_series else None,
         "ball_drop_amount": (float(ball_z_series[0] - ball_z_series[-1]) if len(ball_z_series) > 1 else None),
+        "joint_ranges": [float(v) for v in joint_ranges],
+        "arm_joint_min_range": (float(np.min(joint_ranges[:5])) if len(joint_ranges) >= 5 else None),
+        "ee_disp_norm": ee_disp_norm,
     }
     import json
     with open(os.path.join(out_dir, f"{args_cli.mode}_summary.json"), "w") as f:

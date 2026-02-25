@@ -2,16 +2,16 @@
 set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ISAACLAB_SH="${ISAACLAB_SH:-$HOME/IsaacLab/isaaclab.sh}"
 OUT_ROOT="$ROOT_DIR/logs/videos/demo_pack_20260225"
 LOG_ROOT="$ROOT_DIR/logs/recovery"
 SUMMARY="$LOG_ROOT/demo_pack_20260225_summary.txt"
+PYTHON_BIN="${PYTHON_BIN:-$HOME/isaaclab_venv/bin/python}"
 
 mkdir -p "$OUT_ROOT" "$LOG_ROOT"
 : > "$SUMMARY"
 
-if [ ! -x "$ISAACLAB_SH" ]; then
-  echo "isaaclab.sh not executable at $ISAACLAB_SH" | tee -a "$SUMMARY"
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "Python not executable at $PYTHON_BIN" | tee -a "$SUMMARY"
   exit 1
 fi
 
@@ -32,7 +32,7 @@ run_demo() {
   echo "rc=$rc log=$log_file" | tee -a "$SUMMARY"
 }
 
-BASE="cd '$ROOT_DIR' && '$ISAACLAB_SH' -p '$ROOT_DIR/scripts/record_motion_proof.py' --headless --num_envs 1 --num_steps 360 --camera_size 720"
+BASE="cd '$ROOT_DIR' && export PYTHONPATH='$ROOT_DIR/rl_task:\$PYTHONPATH' && '$PYTHON_BIN' '$ROOT_DIR/scripts/record_motion_proof.py' --headless --num_envs 1 --num_steps 360 --camera_size 720"
 
 run_demo 1 sweep_tight "$BASE --mode sweep --camera_zoom tight --action_gain 1.0 --env_action_scale 1.0"
 run_demo 2 sweep_wide "$BASE --mode sweep --camera_zoom wide --action_gain 1.0 --env_action_scale 2.0"
