@@ -10,6 +10,9 @@ parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--num_steps", type=int, default=240)
 parser.add_argument("--fps", type=int, default=30)
 parser.add_argument("--output_dir", type=str, default="logs/videos/motion_proof")
+parser.add_argument("--use_fabric", action="store_true", help="Enable sim.use_fabric")
+parser.add_argument("--disable_overhead", action="store_true", help="Disable overhead camera")
+parser.add_argument("--camera_size", type=int, default=640, help="Overhead camera square resolution")
 
 from isaaclab.app import AppLauncher
 
@@ -66,13 +69,16 @@ def main():
         runner_cfg = AliceBallTransferPPORunnerCfg()
 
     env_cfg.scene.num_envs = args_cli.num_envs
-    env_cfg.sim.use_fabric = False
+    env_cfg.sim.use_fabric = args_cli.use_fabric
 
     # Tighten overhead framing so arm motion is visually obvious.
     if hasattr(env_cfg, "overhead_camera") and env_cfg.overhead_camera is not None:
-        env_cfg.overhead_camera.height = 640
-        env_cfg.overhead_camera.width = 640
-        env_cfg.overhead_camera.offset.pos = (-0.07, 0.0, 0.43)
+        if args_cli.disable_overhead:
+            env_cfg.overhead_camera = None
+        else:
+            env_cfg.overhead_camera.height = args_cli.camera_size
+            env_cfg.overhead_camera.width = args_cli.camera_size
+            env_cfg.overhead_camera.offset.pos = (-0.07, 0.0, 0.43)
 
     env = gym.make(env_id, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env)
