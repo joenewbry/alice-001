@@ -11,13 +11,9 @@ venv/
 *.swp
 *.swo
 
-# Build/runtime artifacts
-logs/videos/
-logs/recovery/*.tar.gz
-logs/**/*.log
-*.log
-
-# Isaac/rl temp outputs
+# Generated outputs and large artifacts
+logs/
 rl_task/logs/
 rl_task/runs/
 rl_task/checkpoints/
+*.log
