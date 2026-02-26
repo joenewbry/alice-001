@@ -328,10 +328,14 @@ class BallTransferEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length
         terminated = torch.zeros_like(time_out)
 
-        # Terminate if ball falls off the table (local Z < -0.05)
+        # Terminate if ball falls off the table
+        # Table surface at z=0.05, ball starts at z=0.058
+        # z < 0.03 means ball has clearly left the table
         ball_pos = self._get_ball_pos_local()
-        ball_fell = ball_pos[:, 2] < -0.05
-        terminated = terminated | ball_fell
+        ball_fell = ball_pos[:, 2] < 0.03
+        # Also check XY bounds (table is 50cm x 50cm centered at origin)
+        ball_off_xy = (torch.abs(ball_pos[:, 0]) > 0.28) | (torch.abs(ball_pos[:, 1]) > 0.28)
+        terminated = terminated | ball_fell | ball_off_xy
 
         return terminated, time_out
 
