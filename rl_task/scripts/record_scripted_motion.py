@@ -96,10 +96,15 @@ ee_idx = robot.find_bodies("gripper_base")[0][0]
 ALPHA = 0.5  # Kinematic interpolation smoothing factor (tight tracking)
 
 def apply_kinematic_interp(target_pos):
-    """Smoothly interpolate toward target via write_joint_state_to_sim."""
+    """Smoothly interpolate toward target via write_joint_state_to_sim.
+
+    Also set position target so the PhysX drive target matches,
+    which ensures the renderer sees the correct pose.
+    """
     current = robot.data.joint_pos[0:1].clone()
     interp = current + ALPHA * (target_pos - current)
     robot.write_joint_state_to_sim(interp, torch.zeros_like(interp))
+    robot.set_joint_position_target(interp)
 
 # ── Set initial pose ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
