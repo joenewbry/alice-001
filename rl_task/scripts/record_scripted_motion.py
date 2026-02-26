@@ -124,72 +124,55 @@ def save_frame(frame_idx, output_dir, overhead_cam, side_cam):
         Image.fromarray(img).save(f"{output_dir}/side_{frame_idx:04d}.png")
 
 env_ids = torch.tensor([0], device=robot.device)
+SIM_STEPS_PER_FRAME = 4  # 4 steps at 120Hz = 30fps rendering
 
-# ── Phase 1: Hold at init (30 frames) ──
-print("Phase 1: Hold at init...")
-for frame in range(30):
-    # Kinematic teleport (bypasses PD, directly sets positions)
-    robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints), env_ids=env_ids)
+# Track trajectory for matplotlib fallback
+trajectory = {"ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [], "frame": []}
 
-    # Keep ball at EE
-    ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
-    ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, env_ids)
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
+def step_and_render(num_frames, joint_target, frame_offset, label=""):
+    """Set PD target and step sim, saving frames."""
+    robot.set_joint_position_target(joint_target)
+    for f in range(num_frames):
+        # Keep ball at EE (kinematic grasp)
+        ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
+        ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
+        ball.write_root_pose_to_sim(ball_pose, env_ids)
+        ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
-    for _ in range(2):
-        scene.write_data_to_sim()
-        sim.step()
-        scene.update(dt=1/120)
+        for _ in range(SIM_STEPS_PER_FRAME):
+            scene.write_data_to_sim()
+            sim.step()
+            scene.update(dt=1/120)
 
-    save_frame(frame, args.output_dir, overhead_cam, side_cam)
+        frame = frame_offset + f
+        save_frame(frame, args.output_dir, overhead_cam, side_cam)
 
-# ── Phase 2: Interpolate init → target (180 frames) ──
-print("Phase 2: Interpolating to target...")
-for frame_in_phase in range(180):
-    t = min(1.0, frame_in_phase / 120.0)  # Linear interp over 2 seconds
-    current_joints = init_joints + t * (target_joints - init_joints)
-
-    # Kinematic teleport — directly set joint positions each frame
-    robot.write_joint_state_to_sim(current_joints, torch.zeros_like(current_joints), env_ids=env_ids)
-
-    # Keep ball at EE
-    ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
-    ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, env_ids)
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
-
-    for _ in range(2):
-        scene.write_data_to_sim()
-        sim.step()
-        scene.update(dt=1/120)
-
-    frame = 30 + frame_in_phase
-    save_frame(frame, args.output_dir, overhead_cam, side_cam)
-
-    if frame_in_phase % 30 == 0:
+        # Track trajectory
         ep = robot.data.body_pos_w[0, ee_idx, :].cpu().numpy()
         bp = ball.data.root_pos_w[0].cpu().numpy()
-        jp = robot.data.joint_pos[0].cpu().numpy()
-        print(f"  Frame {frame}: t={t:.2f} EE=({ep[0]:.4f},{ep[1]:.4f},{ep[2]:.4f}) "
-              f"Ball=({bp[0]:.4f},{bp[1]:.4f},{bp[2]:.4f}) joints={jp.round(3)}")
+        trajectory["ee_x"].append(ep[0])
+        trajectory["ee_z"].append(ep[2])
+        trajectory["ball_x"].append(bp[0])
+        trajectory["ball_z"].append(bp[2])
+        trajectory["frame"].append(frame)
 
-# ── Phase 3: Hold at target (90 frames) ──
+        if f % 30 == 0:
+            jp = robot.data.joint_pos[0].cpu().numpy()
+            print(f"  [{label}] Frame {frame}: EE=({ep[0]:.4f},{ep[1]:.4f},{ep[2]:.4f}) "
+                  f"joints={jp.round(3)}")
+
+# ── Phase 1: Hold at init (60 frames = 2s) ──
+print("Phase 1: Hold at init...")
+step_and_render(60, init_joints, 0, "HOLD")
+
+# ── Phase 2: Move to target via PD (300 frames = 10s) ──
+# Set target joints and let PD controller drive the arm there
+print("Phase 2: PD-driving to target...")
+step_and_render(300, target_joints, 60, "MOVE")
+
+# ── Phase 3: Hold at target (60 frames = 2s) ──
 print("Phase 3: Hold at target...")
-for frame_in_phase in range(90):
-    robot.write_joint_state_to_sim(target_joints, torch.zeros_like(target_joints), env_ids=env_ids)
-    ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
-    ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, env_ids)
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
-
-    for _ in range(2):
-        scene.write_data_to_sim()
-        sim.step()
-        scene.update(dt=1/120)
-
-    frame = 210 + frame_in_phase
-    save_frame(frame, args.output_dir, overhead_cam, side_cam)
+step_and_render(60, target_joints, 360, "HOLD")
 
 # Final position
 ep = robot.data.body_pos_w[0, ee_idx, :].cpu().numpy()
@@ -200,17 +183,53 @@ target_pos = np.array([-0.025, 0.0, 0.185])
 dist = np.linalg.norm(bp[:3] - target_pos)
 print(f"Ball-to-target distance: {dist:.4f}m")
 
-# ── Assemble videos with ffmpeg ──
-print("\nAssembling videos...")
-os.system(f"ffmpeg -y -framerate 30 -i {args.output_dir}/overhead_%04d.png "
-          f"-c:v libx264 -pix_fmt yuv420p {args.output_dir}/overhead_motion.mp4 2>/dev/null")
-os.system(f"ffmpeg -y -framerate 30 -i {args.output_dir}/side_%04d.png "
-          f"-c:v libx264 -pix_fmt yuv420p {args.output_dir}/side_motion.mp4 2>/dev/null")
+# ── Save trajectory plot ──
+print("\nGenerating trajectory plot...")
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    frames = trajectory["frame"]
+    # Plot 1: X-Z trajectory
+    ax1 = axes[0]
+    ax1.plot(trajectory["ee_x"], trajectory["ee_z"], 'b-', label='EE path', linewidth=2)
+    ax1.plot(trajectory["ball_x"], trajectory["ball_z"], 'r--', label='Ball path', linewidth=1.5)
+    ax1.plot(trajectory["ee_x"][0], trajectory["ee_z"][0], 'go', markersize=10, label='Start')
+    ax1.plot(trajectory["ee_x"][-1], trajectory["ee_z"][-1], 'rs', markersize=10, label='End')
+    ax1.plot(-0.025, 0.185, 'k*', markersize=15, label='Target')
+    ax1.set_xlabel('X position (m)')
+    ax1.set_ylabel('Z position (m)')
+    ax1.set_title('EE & Ball Trajectory (X-Z plane)')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_aspect('equal')
+
+    # Plot 2: Position over time
+    ax2 = axes[1]
+    ax2.plot(frames, trajectory["ee_x"], 'b-', label='EE X')
+    ax2.plot(frames, trajectory["ee_z"], 'b--', label='EE Z')
+    ax2.plot(frames, trajectory["ball_x"], 'r-', label='Ball X')
+    ax2.plot(frames, trajectory["ball_z"], 'r--', label='Ball Z')
+    ax2.axhline(y=-0.025, color='gray', linestyle=':', label='Target X')
+    ax2.axhline(y=0.185, color='gray', linestyle='-.', label='Target Z')
+    ax2.set_xlabel('Frame')
+    ax2.set_ylabel('Position (m)')
+    ax2.set_title('Position vs Time')
+    ax2.legend(fontsize=8)
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f"{args.output_dir}/trajectory_plot.png", dpi=150)
+    print(f"Saved trajectory plot: {args.output_dir}/trajectory_plot.png")
+except Exception as e:
+    print(f"Could not generate plot: {e}")
 
 # Count frames
 overhead_count = len([f for f in os.listdir(args.output_dir) if f.startswith("overhead_") and f.endswith(".png")])
 side_count = len([f for f in os.listdir(args.output_dir) if f.startswith("side_") and f.endswith(".png")])
 print(f"Saved {overhead_count} overhead frames, {side_count} side frames")
-print(f"Videos: {args.output_dir}/overhead_motion.mp4, {args.output_dir}/side_motion.mp4")
 
 simulation_app.close()
