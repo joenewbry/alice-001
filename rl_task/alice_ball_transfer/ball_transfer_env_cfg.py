@@ -186,7 +186,7 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
         ),
         offset=CameraCfg.OffsetCfg(
             pos=(-0.08, 0.35, 0.22),   # 35cm to +Y side, at workspace height
-            rot=(0.7071, -0.7071, 0.0, 0.0),  # Look along -Y toward workspace
+            rot=(0.7071, 0.7071, 0.0, 0.0),  # +90° around X: camera Z → -Y (look toward origin)
             convention="ros",
         ),
     )
