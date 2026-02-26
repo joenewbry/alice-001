@@ -54,9 +54,9 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=3.0,  # Match real LX-16A stall torque (~3 N·m)
-            stiffness=100.0,
-            damping=10.0,  # Overdamped to settle without oscillation
+            effort_limit_sim=10.0,  # 6x real LX-16A (1.67 N·m) — tune for sim-to-real later via DR
+            stiffness=60.0,
+            damping=8.0,
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],
