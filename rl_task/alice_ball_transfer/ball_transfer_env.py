@@ -181,8 +181,8 @@ class BallTransferEnv(DirectRLEnv):
         # PhysX position drives and effort PD are both unstable for this USDA
         # (drive:type="force" + very low inertia → explicit integration NaN).
         # write_joint_state_to_sim provides reliable, NaN-free position control.
-        # Alpha=0.1 → time constant ~0.08s at 120Hz, fast enough for RL.
-        alpha = 0.1
+        # Alpha=0.5 → tight tracking that compensates for gravity drift.
+        alpha = 0.5
         current = self.robot.data.joint_pos.clone()
         interp = current + alpha * (self._robot_dof_targets - current)
         self.robot.write_joint_state_to_sim(interp, torch.zeros_like(interp))

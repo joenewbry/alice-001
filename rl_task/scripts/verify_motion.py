@@ -79,7 +79,7 @@ ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=device), env_ids)
 traj = {"frame": [], "ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [],
         "sh": [], "el": [], "wp": [], "target_sh": [], "target_el": [], "target_wp": []}
 
-ALPHA = 0.1  # Smoothing factor (time constant ~0.08s at 120Hz)
+ALPHA = 0.5  # Smoothing factor — high for tight gravity-compensation tracking
 
 def step_sim(num_steps, target, label=""):
     """Step sim with kinematic interpolation and track trajectory."""
