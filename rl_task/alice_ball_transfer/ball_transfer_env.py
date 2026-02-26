@@ -362,13 +362,16 @@ class BallTransferEnv(DirectRLEnv):
             self._diag_counter += 1
         else:
             self._diag_counter = 0
-        if self._diag_counter % 500 == 0:
+        if self._diag_counter % 200 == 0:
             jp = joint_pos[0].cpu().numpy()
             bp = ball_pos[0].cpu().numpy()
             ep = ee_pos[0].cpu().numpy()
             tgt = self._robot_dof_targets[0].cpu().numpy()
-            print(f"[DIAG step={self._diag_counter}] base_joint={jp[0]:.3f} target={tgt[0]:.3f} "
-                  f"EE=({ep[0]:.3f},{ep[1]:.3f},{ep[2]:.3f}) "
+            jv = self.robot.data.joint_vel[0].cpu().numpy()
+            print(f"[DIAG step={self._diag_counter}] ALL joints:  {jp.round(4)}")
+            print(f"[DIAG step={self._diag_counter}] ALL targets: {tgt.round(4)}")
+            print(f"[DIAG step={self._diag_counter}] ALL vels:    {jv.round(4)}")
+            print(f"[DIAG step={self._diag_counter}] EE=({ep[0]:.3f},{ep[1]:.3f},{ep[2]:.3f}) "
                   f"ball=({bp[0]:.3f},{bp[1]:.3f},{bp[2]:.3f}) "
                   f"ball2tgt={ball_to_target_dist[0]:.4f} grasped={self._ball_grasped[0].item()}")
 
