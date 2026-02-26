@@ -170,6 +170,8 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     )
 
     # Side camera for human-visible articulation debugging.
+    # Positioned along +Y looking toward workspace center (-0.1, 0, 0.2).
+    # 90 deg rotation around X maps camera +Z to -Y (looking along -Y toward origin).
     side_camera: CameraCfg = CameraCfg(
         prim_path="/World/envs/env_.*/side_cam",
         update_period=0,
@@ -177,15 +179,14 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
         width=640,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=12.0,
-            focus_distance=0.40,
-            horizontal_aperture=20.0,
+            focal_length=10.0,
+            focus_distance=0.35,
+            horizontal_aperture=15.0,  # ~50 deg FOV
             clipping_range=(0.01, 5.0),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(0.25, -0.24, 0.22),
-            # 45 deg yaw + slight downward pitch
-            rot=(0.3536, 0.1464, 0.3536, 0.8536),
+            pos=(-0.08, 0.35, 0.22),   # 35cm to +Y side, at workspace height
+            rot=(0.7071, -0.7071, 0.0, 0.0),  # Look along -Y toward workspace
             convention="ros",
         ),
     )
