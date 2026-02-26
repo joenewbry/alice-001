@@ -17,7 +17,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "alice_ball_transfer"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,  # High exploration — only 3 effective joints, need to find transport
+        init_noise_std=0.5,  # Moderate — absolute control needs less noise
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[128, 128],   # Smaller network for simpler 3-joint task

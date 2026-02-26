@@ -45,13 +45,7 @@ class BallTransferEnv(DirectRLEnv):
         self._left_finger_idx = self.robot.find_joints("left_finger_joint")[0][0]
         self._right_finger_idx = self.robot.find_joints("right_finger_joint")[0][0]
 
-        # Speed scales for delta target computation (1D, matches Franka pattern)
-        self._robot_dof_speed_scales = torch.ones_like(self._joint_lower)
-        # Gripper joints — faster than before so exploration can close them
-        self._robot_dof_speed_scales[self._left_finger_idx] = 0.5
-        self._robot_dof_speed_scales[self._right_finger_idx] = 0.5
-
-        # Persistent joint position targets (updated incrementally each step)
+        # Joint position targets (set each step from policy output)
         self._robot_dof_targets = torch.zeros((self.num_envs, self.robot.num_joints), device=self.device)
 
         # Target and source positions in LOCAL frame (per-env, same value)
@@ -166,36 +160,23 @@ class BallTransferEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
-        # Apply action delay if domain randomization is active
-        effective_actions = self._actions
-        if self.cfg.enable_domain_rand and hasattr(self, "_action_delay_steps"):
-            no_delay = self._action_delay_steps == 0
-            delayed = self._action_delay_buf.clone()
-            delayed[no_delay] = self._actions[no_delay]
-            self._action_delay_buf = self._actions.clone()
-            effective_actions = delayed
+        # ── Absolute position control (Stage 1) ──
+        # Actions directly set joint positions: target = init + action * scale
+        # Only 3 effective joints: shoulder (idx 1), elbow (idx 2), wrist_pitch (idx 3)
+        # This makes the optimal policy a constant output vector — fast to learn.
+        targets = self._init_joint_pos.unsqueeze(0).expand(self.num_envs, -1).clone()
 
-        # Delta target formulation (Franka Cabinet pattern):
-        # targets += speed_scales * dt * actions * action_scale
-        # This keeps PD errors small and prevents arm instability
-        targets = self._robot_dof_targets + (
-            self._robot_dof_speed_scales * self.dt * effective_actions * self.cfg.action_scale
-        )
+        # Map actions [0:3] → shoulder, elbow, wrist_pitch offsets from init
+        # action_scale controls range of motion around init position
+        targets[:, 1] += self._actions[:, 1] * self.cfg.action_scale  # shoulder
+        targets[:, 2] += self._actions[:, 2] * self.cfg.action_scale  # elbow
+        targets[:, 3] += self._actions[:, 3] * self.cfg.action_scale  # wrist_pitch
 
         # Apply joint offset noise if domain randomization is active
         if self.cfg.enable_domain_rand and hasattr(self, "_joint_offsets"):
             targets = targets + self._joint_offsets
 
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
-
-        # Force unused joints — policy only controls shoulder, elbow, wrist_pitch (Stage 1)
-        # base_joint (idx 0): locked in USD, zeroing prevents wasted exploration
-        # wrist_roll (idx 4): not useful for X-Z plane task
-        # fingers: force-closed to prevent accidental ball release
-        self._robot_dof_targets[:, 0] = self._init_joint_pos[0]   # base_joint
-        self._robot_dof_targets[:, 4] = self._init_joint_pos[4]   # wrist_roll
-        self._robot_dof_targets[:, self._left_finger_idx] = 0.0
-        self._robot_dof_targets[:, self._right_finger_idx] = 0.0
 
     def _apply_action(self):
         # Actuator-driven: set position targets for PD controllers (like Franka examples)
