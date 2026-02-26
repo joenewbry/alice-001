@@ -84,7 +84,7 @@ BALL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.080, 0.03, 0.108),  # On pedestal (pedestal top=0.10 + ball radius=0.008)
+        pos=(-0.083, 0.0, 0.108),  # At arm's natural EE position (pedestal height)
     ),
 )
 
@@ -103,7 +103,7 @@ PEDESTAL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.08, 0.0, 0.075),  # Centered under ball area, top at z=0.10
+        pos=(-0.083, -0.03, 0.075),  # Centered between source and target, top at z=0.10
     ),
 )
 
@@ -207,7 +207,7 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_scale = 0.5
 
     # Reward scales
-    reach_reward_scale = 2.0
+    reach_reward_scale = 5.0
     grasp_reward_scale = 10.0
     lift_reward_scale = 15.0
     transport_reward_scale = 10.0
@@ -215,9 +215,9 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_penalty_scale = 0.01
     velocity_penalty_scale = 0.0005
 
-    # Task positions (ball on pedestal, ~6cm apart in Y to stay on pedestal surface)
-    source_pos = (-0.080, 0.03, 0.108)
-    target_pos = (-0.080, -0.03, 0.108)
+    # Task positions (ball at EE rest pos on pedestal, target 6cm away in Y)
+    source_pos = (-0.083, 0.0, 0.108)
+    target_pos = (-0.083, -0.06, 0.108)
     target_radius = 0.02
     lift_height = 0.03
 
