@@ -40,8 +40,8 @@ ALICE_001_CFG = ArticulationCfg(
             "elbow_joint": -1.8,    # Extended toward pedestal height
             "wrist_pitch_joint": -0.5,
             "wrist_roll_joint": 0.0,
-            "left_finger_joint": 0.12,   # Nearly closed — easy to discover grasp
-            "right_finger_joint": -0.12,
+            "left_finger_joint": 0.0,    # Fully closed — starts grasped
+            "right_finger_joint": 0.0,
         },
         joint_vel={".*": 0.0},
     ),
