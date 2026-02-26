@@ -84,7 +84,7 @@ BALL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.083, 0.0, 0.108),  # At arm's natural EE position (pedestal height)
+        pos=(-0.091, 0.0, 0.159),  # At arm's gravity-settled EE position
     ),
 )
 
@@ -93,7 +93,7 @@ BALL_CFG = RigidObjectCfg(
 PEDESTAL_CFG = RigidObjectCfg(
     prim_path="/World/envs/env_.*/Pedestal",
     spawn=sim_utils.CuboidCfg(
-        size=(0.20, 0.20, 0.05),  # 20cm x 20cm x 5cm tall
+        size=(0.20, 0.20, 0.10),  # 20cm x 20cm x 10cm tall
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             kinematic_enabled=True,
         ),
@@ -103,7 +103,7 @@ PEDESTAL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.083, -0.03, 0.075),  # Centered between source and target, top at z=0.10
+        pos=(-0.091, -0.03, 0.10),  # Top at z=0.15, supports ball at z=0.159
     ),
 )
 
@@ -218,9 +218,9 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_penalty_scale = 0.01
     velocity_penalty_scale = 0.0005
 
-    # Task positions (ball at EE rest pos on pedestal, target 6cm away in Y)
-    source_pos = (-0.083, 0.0, 0.108)
-    target_pos = (-0.083, -0.06, 0.108)
+    # Task positions (ball at arm's gravity-settled EE pos, target 6cm away in Y)
+    source_pos = (-0.091, 0.0, 0.159)
+    target_pos = (-0.091, -0.06, 0.159)
     target_radius = 0.02
     lift_height = 0.03
 

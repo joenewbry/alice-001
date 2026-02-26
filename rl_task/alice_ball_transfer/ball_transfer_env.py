@@ -189,11 +189,12 @@ class BallTransferEnv(DirectRLEnv):
         right_pos = joint_pos[:, self._right_finger_idx]
         gripper_opening = (torch.abs(left_pos) + torch.abs(right_pos)) / 2.0
 
-        # Grasp condition: EE within grasp_distance of ball AND gripper closing (<0.1 rad)
+        # Grasp condition: EE within grasp_distance of ball AND gripper not wide open
+        # Natural resting opening is ~0.146 rad, so threshold at 0.2 catches resting state
         grasp_dist = getattr(self.cfg, 'grasp_distance', 0.02)
-        can_grasp = (ee_to_ball_dist < grasp_dist) & (gripper_opening < 0.1)
-        # Release condition: gripper opening (>0.15 rad)
-        releasing = gripper_opening > 0.15
+        can_grasp = (ee_to_ball_dist < grasp_dist) & (gripper_opening < 0.2)
+        # Release condition: gripper actively opened wide (>0.3 rad)
+        releasing = gripper_opening > 0.3
 
         # Update grasp state
         self._ball_grasped = (self._ball_grasped | can_grasp) & ~releasing
@@ -270,7 +271,7 @@ class BallTransferEnv(DirectRLEnv):
         # Gripper state
         left_pos = joint_pos[:, self._left_finger_idx]
         right_pos = joint_pos[:, self._right_finger_idx]
-        gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.3).float()
+        gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.5).float()
 
         # Ball height relative to source (local Z)
         ball_lifted = (
@@ -348,14 +349,14 @@ class BallTransferEnv(DirectRLEnv):
         terminated = torch.zeros_like(time_out)
 
         # Terminate if ball falls off the pedestal
-        # Pedestal top at z=0.10, ball starts at z=0.108
-        # z < 0.07 means ball has clearly fallen off pedestal
+        # Pedestal top at z=0.15, ball starts at z=0.159
+        # z < 0.12 means ball has clearly fallen off pedestal
         ball_pos = self._get_ball_pos_local()
-        ball_fell = ball_pos[:, 2] < 0.07
-        # Check XY bounds (pedestal is 20cm x 20cm centered at -0.08, 0)
+        ball_fell = ball_pos[:, 2] < 0.12
+        # Check XY bounds (pedestal is 20cm x 20cm centered at -0.091, -0.03)
         ball_off_xy = (
-            (torch.abs(ball_pos[:, 0] + 0.08) > 0.15)
-            | (torch.abs(ball_pos[:, 1]) > 0.15)
+            (torch.abs(ball_pos[:, 0] + 0.091) > 0.15)
+            | (torch.abs(ball_pos[:, 1] + 0.03) > 0.15)
         )
         terminated = terminated | ball_fell | ball_off_xy
 
