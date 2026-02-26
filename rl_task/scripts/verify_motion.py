@@ -59,11 +59,23 @@ PD_KP = torch.tensor([100, 100, 100, 100, 100, 2000, 2000], device=device, dtype
 PD_KD = torch.tensor([10, 10, 10, 10, 10, 100, 100], device=device, dtype=torch.float32)
 MAX_T = torch.tensor([100, 100, 100, 100, 100, 200, 200], device=device, dtype=torch.float32)
 
+_pd_step = 0
 def apply_pd(target_pos):
+    global _pd_step
     pos = robot.data.joint_pos[0:1]
     vel = robot.data.joint_vel[0:1]
-    torque = PD_KP * (target_pos - pos) - PD_KD * vel
+    error = target_pos - pos
+    torque = PD_KP * error - PD_KD * vel
     torque = torch.clamp(torque, -MAX_T, MAX_T)
+
+    if _pd_step < 5 or (_pd_step < 30 and _pd_step % 5 == 0):
+        print(f"  [PD step {_pd_step}] pos={pos[0,:3].cpu().numpy().round(3)} "
+              f"vel={vel[0,:3].cpu().numpy().round(3)} "
+              f"err={error[0,:3].cpu().numpy().round(3)} "
+              f"torque={torque[0,:3].cpu().numpy().round(1)}")
+    if torch.isnan(torque).any():
+        print(f"  [PD step {_pd_step}] NaN DETECTED! pos={pos} vel={vel} err={error}")
+    _pd_step += 1
     robot.set_joint_effort_target(torque)
 
 # Joint configs
