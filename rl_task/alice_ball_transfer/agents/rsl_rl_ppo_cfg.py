@@ -17,7 +17,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "alice_ball_transfer"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.3,  # Focused noise — action_scale=2.0 gives ample range
+        init_noise_std=0.5,  # Moderate noise for delta exploration
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[64, 64],     # Small network — task is simple (3D IK)

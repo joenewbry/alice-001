@@ -160,17 +160,15 @@ class BallTransferEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0)
 
-        # ── Absolute position control (Stage 1) ──
-        # Actions directly set joint positions: target = init + action * scale
+        # ── Delta position control ──
+        # targets += action * delta_scale (per step)
         # Only 3 effective joints: shoulder (idx 1), elbow (idx 2), wrist_pitch (idx 3)
-        # This makes the optimal policy a constant output vector — fast to learn.
-        targets = self._init_joint_pos.unsqueeze(0).expand(self.num_envs, -1).clone()
+        delta = torch.zeros_like(self._robot_dof_targets)
+        delta[:, 1] = self._actions[:, 1]  # shoulder
+        delta[:, 2] = self._actions[:, 2]  # elbow
+        delta[:, 3] = self._actions[:, 3]  # wrist_pitch
 
-        # Map actions [0:3] → shoulder, elbow, wrist_pitch offsets from init
-        # action_scale controls range of motion around init position
-        targets[:, 1] += self._actions[:, 1] * self.cfg.action_scale  # shoulder
-        targets[:, 2] += self._actions[:, 2] * self.cfg.action_scale  # elbow
-        targets[:, 3] += self._actions[:, 3] * self.cfg.action_scale  # wrist_pitch
+        targets = self._robot_dof_targets + delta * self.cfg.action_scale
 
         # Apply joint offset noise if domain randomization is active
         if self.cfg.enable_domain_rand and hasattr(self, "_joint_offsets"):
@@ -282,26 +280,33 @@ class BallTransferEnv(DirectRLEnv):
         ball_at_target = ball_to_target_dist < self.cfg.target_radius
         ball_lifted = (ball_pos[:, 2] - self._source_pos_local[:, 2]) > self.cfg.lift_height
 
-        # ── Reward: minimize ball-to-target distance (linear, clear gradient) ──
-        # Ball is always grasped and attached to EE, so this is really
-        # "move the arm to bring ball to target."
+        # ── Reward: potential-based shaping ──
+        # Reward = (prev_dist - curr_dist) * scale — positive when getting closer
+        # This gives immediate per-step gradient toward target.
 
-        # Init distance: source=(-0.091,0,0.159), target=(-0.025,0,0.185)
-        # dist = sqrt(0.066² + 0.026²) ≈ 0.071m
-        init_dist = 0.072  # approximate starting ball-to-target distance
         reach_reward = torch.zeros_like(ee_to_ball_dist)
         grasp_reward = torch.zeros_like(ee_to_ball_dist)
         lift_reward = torch.zeros_like(ee_to_ball_dist)
         drop_reward = torch.zeros_like(ee_to_ball_dist)
 
-        # Transport: linear distance reduction (positive when closer than start)
-        transport_reward = (init_dist - ball_to_target_dist) * 100.0  # +1 per 1mm closer
+        # Distance-decrease shaping (potential-based)
+        if not hasattr(self, '_prev_ball_to_target_dist'):
+            self._prev_ball_to_target_dist = ball_to_target_dist.clone()
 
-        # Small action penalty to prevent wild movements
+        distance_decrease = self._prev_ball_to_target_dist - ball_to_target_dist
+        self._prev_ball_to_target_dist = ball_to_target_dist.clone()
+
+        # Reward: +1000 per meter closer (i.e., +1 per mm closer)
+        transport_reward = distance_decrease * 1000.0
+
+        # Bonus for being close to target (helps fine-tune final position)
+        proximity_bonus = torch.exp(-50.0 * ball_to_target_dist)
+
+        # Small action penalty
         action_penalty = torch.sum(self._actions ** 2, dim=-1)
         velocity_penalty = torch.zeros_like(action_penalty)
 
-        total = transport_reward - 0.01 * action_penalty
+        total = transport_reward + 5.0 * proximity_bonus - 0.01 * action_penalty
 
         # Store for logging
         self._reward_components["reach"] = reach_reward
@@ -364,8 +369,11 @@ class BallTransferEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        # Clear grasp state for reset envs
+        # Clear grasp state and distance tracking for reset envs
         self._ball_grasped[env_ids] = False
+        if hasattr(self, '_prev_ball_to_target_dist'):
+            # Will be properly set on first reward computation after reset
+            self._prev_ball_to_target_dist[env_ids] = 0.072  # approx init dist
 
         num_reset = len(env_ids)
 
