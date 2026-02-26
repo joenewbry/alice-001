@@ -27,6 +27,12 @@ class BallTransferEnv(DirectRLEnv):
         # Precompute dt (matches Franka pattern: sim_dt * decimation)
         self.dt = self.cfg.sim.dt * self.cfg.decimation
 
+        # Desired initial joint positions (explicit — init_state may not be applied)
+        self._init_joint_pos = torch.tensor(
+            [0.0, -0.3, -1.8, -0.5, 0.0, 0.0, 0.0],  # base, shoulder, elbow, wrist_p, wrist_r, L finger, R finger
+            device=self.device, dtype=torch.float32
+        )
+
         # Cache joint limits for normalization and clamping (1D tensors)
         self._joint_lower = self.robot.data.soft_joint_pos_limits[0, :, 0].to(device=self.device)
         self._joint_upper = self.robot.data.soft_joint_pos_limits[0, :, 1].to(device=self.device)
@@ -71,6 +77,14 @@ class BallTransferEnv(DirectRLEnv):
 
         # Kinematic grasp state: tracks whether ball is "attached" to EE
         self._ball_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+        # Diagnostic: print initial EE and ball positions
+        ee0 = self._get_ee_pos_local()[0].cpu().numpy()
+        ball0 = self._get_ball_pos_local()[0].cpu().numpy()
+        jp0 = self.robot.data.joint_pos[0].cpu().numpy()
+        dist0 = ((ee0 - ball0) ** 2).sum() ** 0.5
+        print(f"[INIT] EE=({ee0[0]:.4f},{ee0[1]:.4f},{ee0[2]:.4f}) Ball=({ball0[0]:.4f},{ball0[1]:.4f},{ball0[2]:.4f}) dist={dist0:.4f}")
+        print(f"[INIT] Joints: {jp0.round(3)}")
 
         # Logging buffers for per-phase reward tracking
         self._reward_components = {
@@ -359,11 +373,11 @@ class BallTransferEnv(DirectRLEnv):
 
         num_reset = len(env_ids)
 
-        # Reset robot joints (following Franka Cabinet pattern)
-        joint_pos = self.robot.data.default_joint_pos[env_ids]
-        joint_vel = self.robot.data.default_joint_vel[env_ids]
-        self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        # Reset robot joints — use explicit values (init_state config may not be applied)
+        joint_pos = self._init_joint_pos.unsqueeze(0).expand(num_reset, -1).clone()
+        joint_vel = torch.zeros_like(joint_pos)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+        self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         # Reset persistent DOF targets to init state
         self._robot_dof_targets[env_ids] = joint_pos
