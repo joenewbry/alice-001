@@ -54,9 +54,9 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=50.0,  # High for stable PD control — tune for sim-to-real later via DR
-            stiffness=100.0,
-            damping=10.0,
+            effort_limit_sim=400.0,  # Must exceed gravity torque + voluntary motion — tune via DR for sim2real
+            stiffness=400.0,         # Strong position tracking so arm holds init joint angles under gravity
+            damping=40.0,            # High damping for stable settling
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],

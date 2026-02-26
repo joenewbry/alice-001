@@ -17,7 +17,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "alice_ball_transfer"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.5,  # Higher exploration — policy must discover lift/transport moves
+        init_noise_std=0.3,  # Moderate exploration — arm can now actually move
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[256, 256, 128],
@@ -28,7 +28,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.005,  # Higher entropy for lift/transport discovery
+        entropy_coef=0.001,  # Low entropy — arm has real headroom now, don't need noise exploration
         num_learning_epochs=8,
         num_mini_batches=8,
         learning_rate=3e-4,
