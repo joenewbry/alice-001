@@ -35,7 +35,7 @@ arm_cfg.effort_limit_sim = args.max_force
 print(f"\n=== Config: stiffness={args.stiffness}, damping={args.damping}, maxForce={args.max_force}, gravity={'OFF' if args.no_gravity else 'ON'} ===\n")
 
 # ── Setup sim ──
-gravity = (0, 0, 0) if args.no_gravity else (0, 0, -9.81)
+gravity = (0.0, 0.0, 0.0) if args.no_gravity else (0.0, 0.0, -9.81)
 sim_cfg = SimulationCfg(dt=1/120, gravity=gravity, render_interval=1)
 sim = sim_utils.SimulationContext(sim_cfg)
 
