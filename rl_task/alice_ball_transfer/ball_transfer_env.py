@@ -337,6 +337,25 @@ class BallTransferEnv(DirectRLEnv):
         self.extras["log"]["pct_at_target"] = ball_at_target.float().mean().item()
         self.extras["log"]["mean_ee_to_ball_dist"] = ee_to_ball_dist.mean().item()
         self.extras["log"]["mean_ball_to_target_dist"] = ball_to_target_dist.mean().item()
+        self.extras["log"]["std_ball_to_target_dist"] = ball_to_target_dist.std().item()
+        self.extras["log"]["min_ball_to_target_dist"] = ball_to_target_dist.min().item()
+        self.extras["log"]["mean_base_joint_pos"] = joint_pos[:, 0].mean().item()
+        self.extras["log"]["std_base_joint_pos"] = joint_pos[:, 0].std().item()
+
+        # Periodic diagnostic: per-env details every 500 steps
+        if hasattr(self, '_diag_counter'):
+            self._diag_counter += 1
+        else:
+            self._diag_counter = 0
+        if self._diag_counter % 500 == 0:
+            jp = joint_pos[0].cpu().numpy()
+            bp = ball_pos[0].cpu().numpy()
+            ep = ee_pos[0].cpu().numpy()
+            tgt = self._robot_dof_targets[0].cpu().numpy()
+            print(f"[DIAG step={self._diag_counter}] base_joint={jp[0]:.3f} target={tgt[0]:.3f} "
+                  f"EE=({ep[0]:.3f},{ep[1]:.3f},{ep[2]:.3f}) "
+                  f"ball=({bp[0]:.3f},{bp[1]:.3f},{bp[2]:.3f}) "
+                  f"ball2tgt={ball_to_target_dist[0]:.4f} grasped={self._ball_grasped[0].item()}")
 
         return total
 
