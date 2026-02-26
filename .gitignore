@@ -17,3 +17,4 @@ rl_task/logs/
 rl_task/runs/
 rl_task/checkpoints/
 *.log
+videos/
