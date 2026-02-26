@@ -13,7 +13,7 @@ from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sensors import Camera
 
-from .ball_transfer_env_cfg import ALICE_001_CFG, BALL_CFG, TABLE_CFG, BallTransferEnvCfg
+from .ball_transfer_env_cfg import ALICE_001_CFG, BALL_CFG, PEDESTAL_CFG, TABLE_CFG, BallTransferEnvCfg
 
 
 class BallTransferEnv(DirectRLEnv):
@@ -102,6 +102,10 @@ class BallTransferEnv(DirectRLEnv):
         # Spawn table
         self.table = RigidObject(TABLE_CFG)
         self.scene.rigid_objects["table"] = self.table
+
+        # Spawn pedestal (raised platform for ball)
+        self.pedestal = RigidObject(PEDESTAL_CFG)
+        self.scene.rigid_objects["pedestal"] = self.pedestal
 
         # Spawn ball
         self.ball = RigidObject(BALL_CFG)
@@ -328,13 +332,16 @@ class BallTransferEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length
         terminated = torch.zeros_like(time_out)
 
-        # Terminate if ball falls off the table
-        # Table surface at z=0.05, ball starts at z=0.058
-        # z < 0.03 means ball has clearly left the table
+        # Terminate if ball falls off the pedestal
+        # Pedestal top at z=0.10, ball starts at z=0.108
+        # z < 0.07 means ball has clearly fallen off pedestal
         ball_pos = self._get_ball_pos_local()
-        ball_fell = ball_pos[:, 2] < 0.03
-        # Also check XY bounds (table is 50cm x 50cm centered at origin)
-        ball_off_xy = (torch.abs(ball_pos[:, 0]) > 0.28) | (torch.abs(ball_pos[:, 1]) > 0.28)
+        ball_fell = ball_pos[:, 2] < 0.07
+        # Check XY bounds (pedestal is 20cm x 20cm centered at -0.08, 0)
+        ball_off_xy = (
+            (torch.abs(ball_pos[:, 0] + 0.08) > 0.15)
+            | (torch.abs(ball_pos[:, 1]) > 0.15)
+        )
         terminated = terminated | ball_fell | ball_off_xy
 
         return terminated, time_out

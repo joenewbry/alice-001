@@ -36,9 +36,9 @@ ALICE_001_CFG = ArticulationCfg(
         pos=(0.0, 0.0, 0.05),  # On top of the table
         joint_pos={
             "base_joint": 0.0,
-            "shoulder_joint": 0.0,
-            "elbow_joint": -1.047,
-            "wrist_pitch_joint": 0.0,
+            "shoulder_joint": -0.3,  # Angled down toward ball
+            "elbow_joint": -1.8,    # Extended toward pedestal height
+            "wrist_pitch_joint": -0.5,
             "wrist_roll_joint": 0.0,
             "left_finger_joint": 0.26,
             "right_finger_joint": -0.26,
@@ -84,7 +84,26 @@ BALL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.080, 0.03, 0.058),  # On table surface (table top=0.05 + ball radius=0.008)
+        pos=(-0.080, 0.03, 0.108),  # On pedestal (pedestal top=0.10 + ball radius=0.008)
+    ),
+)
+
+# ── Pedestal (raised platform for ball — arm can't reach table surface) ──
+
+PEDESTAL_CFG = RigidObjectCfg(
+    prim_path="/World/envs/env_.*/Pedestal",
+    spawn=sim_utils.CuboidCfg(
+        size=(0.20, 0.20, 0.05),  # 20cm x 20cm x 5cm tall
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(),
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(0.5, 0.4, 0.35),
+        ),
+    ),
+    init_state=RigidObjectCfg.InitialStateCfg(
+        pos=(-0.08, 0.0, 0.075),  # Centered under ball area, top at z=0.10
     ),
 )
 
@@ -196,9 +215,9 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_penalty_scale = 0.01
     velocity_penalty_scale = 0.0005
 
-    # Task positions (ball on table surface, ~10cm apart in Y)
-    source_pos = (-0.080, 0.05, 0.058)
-    target_pos = (-0.080, -0.05, 0.058)
+    # Task positions (ball on pedestal, ~6cm apart in Y to stay on pedestal surface)
+    source_pos = (-0.080, 0.03, 0.108)
+    target_pos = (-0.080, -0.03, 0.108)
     target_radius = 0.02
     lift_height = 0.03
 
