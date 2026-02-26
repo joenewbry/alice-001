@@ -103,7 +103,7 @@ PEDESTAL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.091, -0.03, 0.10),  # Top at z=0.15, supports ball at z=0.159
+        pos=(-0.07, 0.0, 0.10),  # Centered between source and target
     ),
 )
 
@@ -218,9 +218,11 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_penalty_scale = 0.001   # Very small: don't penalize movement
     velocity_penalty_scale = 0.0001
 
-    # Task positions (ball at arm's gravity-settled EE pos, target 6cm away in Y)
+    # Task positions — target in X-Z plane (base_joint locked, only shoulder/elbow/wrist work)
+    # Source: where the grasped ball starts (near EE rest position)
+    # Target: 5cm higher and 4cm closer to base (reachable via shoulder/elbow/wrist)
     source_pos = (-0.091, 0.0, 0.159)
-    target_pos = (-0.091, -0.06, 0.159)
+    target_pos = (-0.05, 0.0, 0.20)
     target_radius = 0.02
     lift_height = 0.03
 
