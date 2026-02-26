@@ -114,41 +114,50 @@ ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), torch.te
 ee0 = ee_pos[0].cpu().numpy()
 print(f"Initial EE: ({ee0[0]:.4f}, {ee0[1]:.4f}, {ee0[2]:.4f})")
 
+def save_frame(frame_idx, output_dir, overhead_cam, side_cam):
+    """Save camera frames."""
+    if overhead_cam.data.output and "rgb" in overhead_cam.data.output:
+        img = overhead_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
+        Image.fromarray(img).save(f"{output_dir}/overhead_{frame_idx:04d}.png")
+    if side_cam.data.output and "rgb" in side_cam.data.output:
+        img = side_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
+        Image.fromarray(img).save(f"{output_dir}/side_{frame_idx:04d}.png")
+
+env_ids = torch.tensor([0], device=robot.device)
+
 # ── Phase 1: Hold at init (30 frames) ──
 print("Phase 1: Hold at init...")
 for frame in range(30):
-    robot.set_joint_position_target(init_joints)
+    # Kinematic teleport (bypasses PD, directly sets positions)
+    robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints), env_ids=env_ids)
+
     # Keep ball at EE
     ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
     ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, torch.tensor([0], device=robot.device))
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), torch.tensor([0], device=robot.device))
+    ball.write_root_pose_to_sim(ball_pose, env_ids)
+    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
-    for _ in range(2):  # 2 sim steps per frame at 120Hz → 60fps
+    for _ in range(2):
         scene.write_data_to_sim()
         sim.step()
         scene.update(dt=1/120)
 
-    # Save frames
-    if overhead_cam.data.output and "rgb" in overhead_cam.data.output:
-        img = overhead_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/overhead_{frame:04d}.png")
-    if side_cam.data.output and "rgb" in side_cam.data.output:
-        img = side_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/side_{frame:04d}.png")
+    save_frame(frame, args.output_dir, overhead_cam, side_cam)
 
 # ── Phase 2: Interpolate init → target (180 frames) ──
 print("Phase 2: Interpolating to target...")
 for frame_in_phase in range(180):
     t = min(1.0, frame_in_phase / 120.0)  # Linear interp over 2 seconds
     current_joints = init_joints + t * (target_joints - init_joints)
-    robot.set_joint_position_target(current_joints)
+
+    # Kinematic teleport — directly set joint positions each frame
+    robot.write_joint_state_to_sim(current_joints, torch.zeros_like(current_joints), env_ids=env_ids)
 
     # Keep ball at EE
     ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
     ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, torch.tensor([0], device=robot.device))
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), torch.tensor([0], device=robot.device))
+    ball.write_root_pose_to_sim(ball_pose, env_ids)
+    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
     for _ in range(2):
         scene.write_data_to_sim()
@@ -156,27 +165,23 @@ for frame_in_phase in range(180):
         scene.update(dt=1/120)
 
     frame = 30 + frame_in_phase
-    if overhead_cam.data.output and "rgb" in overhead_cam.data.output:
-        img = overhead_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/overhead_{frame:04d}.png")
-    if side_cam.data.output and "rgb" in side_cam.data.output:
-        img = side_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/side_{frame:04d}.png")
+    save_frame(frame, args.output_dir, overhead_cam, side_cam)
 
     if frame_in_phase % 30 == 0:
         ep = robot.data.body_pos_w[0, ee_idx, :].cpu().numpy()
         bp = ball.data.root_pos_w[0].cpu().numpy()
+        jp = robot.data.joint_pos[0].cpu().numpy()
         print(f"  Frame {frame}: t={t:.2f} EE=({ep[0]:.4f},{ep[1]:.4f},{ep[2]:.4f}) "
-              f"Ball=({bp[0]:.4f},{bp[1]:.4f},{bp[2]:.4f})")
+              f"Ball=({bp[0]:.4f},{bp[1]:.4f},{bp[2]:.4f}) joints={jp.round(3)}")
 
 # ── Phase 3: Hold at target (90 frames) ──
 print("Phase 3: Hold at target...")
 for frame_in_phase in range(90):
-    robot.set_joint_position_target(target_joints)
+    robot.write_joint_state_to_sim(target_joints, torch.zeros_like(target_joints), env_ids=env_ids)
     ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
     ball_pose = torch.cat([ee_pos_w, ball.data.root_quat_w], dim=-1)
-    ball.write_root_pose_to_sim(ball_pose, torch.tensor([0], device=robot.device))
-    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), torch.tensor([0], device=robot.device))
+    ball.write_root_pose_to_sim(ball_pose, env_ids)
+    ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
     for _ in range(2):
         scene.write_data_to_sim()
@@ -184,12 +189,7 @@ for frame_in_phase in range(90):
         scene.update(dt=1/120)
 
     frame = 210 + frame_in_phase
-    if overhead_cam.data.output and "rgb" in overhead_cam.data.output:
-        img = overhead_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/overhead_{frame:04d}.png")
-    if side_cam.data.output and "rgb" in side_cam.data.output:
-        img = side_cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype(np.uint8)
-        Image.fromarray(img).save(f"{args.output_dir}/side_{frame:04d}.png")
+    save_frame(frame, args.output_dir, overhead_cam, side_cam)
 
 # Final position
 ep = robot.data.body_pos_w[0, ee_idx, :].cpu().numpy()
