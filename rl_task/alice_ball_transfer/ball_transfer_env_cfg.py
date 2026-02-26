@@ -54,15 +54,15 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=100.0,  # USD maxForce also set to 100 (was 2.5, preventing movement)
-            stiffness=100.0,         # Strong enough to hold position under gravity
-            damping=10.0,            # Good damping ratio
+            effort_limit_sim=100.0,
+            stiffness=0.0,   # PD runs in Python (PhysX position drives broken)
+            damping=0.0,     # PD runs in Python via set_joint_effort_target
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],
             effort_limit_sim=200.0,
-            stiffness=2e3,
-            damping=1e2,
+            stiffness=0.0,   # PD runs in Python
+            damping=0.0,
         ),
     },
 )

@@ -177,8 +177,24 @@ class BallTransferEnv(DirectRLEnv):
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
     def _apply_action(self):
-        # Actuator-driven: set position targets for PD controllers (like Franka examples)
-        self.robot.set_joint_position_target(self._robot_dof_targets)
+        # Manual PD controller → effort targets (PhysX position drives are broken
+        # for this articulation — position/velocity targets generate zero force,
+        # but effort targets work correctly)
+        current_pos = self.robot.data.joint_pos
+        current_vel = self.robot.data.joint_vel
+        pos_error = self._robot_dof_targets - current_pos
+
+        # Per-joint PD gains (arm joints: moderate, gripper: high)
+        stiffness = torch.tensor([100, 100, 100, 100, 100, 2000, 2000],
+                                 device=self.device, dtype=torch.float32)
+        damping = torch.tensor([10, 10, 10, 10, 10, 100, 100],
+                               device=self.device, dtype=torch.float32)
+        max_effort = torch.tensor([100, 100, 100, 100, 100, 200, 200],
+                                  device=self.device, dtype=torch.float32)
+
+        pd_torque = stiffness * pos_error - damping * current_vel
+        pd_torque = torch.clamp(pd_torque, -max_effort, max_effort)
+        self.robot.set_joint_effort_target(pd_torque)
 
         # ── Kinematic grasp attachment ──
         # Standard approach for small-object manipulation in Isaac Lab:

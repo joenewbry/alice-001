@@ -93,13 +93,30 @@ target_joints = torch.tensor(
 # ── Find body indices ──
 ee_idx = robot.find_bodies("gripper_base")[0][0]
 
+# ── PD gains (applied as effort targets — PhysX position drives are broken) ──
+PD_STIFFNESS = torch.tensor([100, 100, 100, 100, 100, 2000, 2000],
+                            device=robot.device, dtype=torch.float32)
+PD_DAMPING = torch.tensor([10, 10, 10, 10, 10, 100, 100],
+                          device=robot.device, dtype=torch.float32)
+MAX_EFFORT = torch.tensor([100, 100, 100, 100, 100, 200, 200],
+                          device=robot.device, dtype=torch.float32)
+
+def apply_pd(target_pos):
+    """Compute and apply PD torques as effort targets."""
+    current_pos = robot.data.joint_pos[0:1]
+    current_vel = robot.data.joint_vel[0:1]
+    error = target_pos - current_pos
+    torque = PD_STIFFNESS * error - PD_DAMPING * current_vel
+    torque = torch.clamp(torque, -MAX_EFFORT, MAX_EFFORT)
+    robot.set_joint_effort_target(torque)
+
 # ── Set initial pose ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
-robot.set_joint_position_target(init_joints)
 
-# Let initial pose settle
+# Let initial pose settle with effort-based PD
 print("Settling initial pose...")
 for _ in range(120):
+    apply_pd(init_joints)
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
@@ -130,8 +147,7 @@ SIM_STEPS_PER_FRAME = 4  # 4 steps at 120Hz = 30fps rendering
 trajectory = {"ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [], "frame": []}
 
 def step_and_render(num_frames, joint_target, frame_offset, label=""):
-    """Set PD target and step sim, saving frames."""
-    robot.set_joint_position_target(joint_target)
+    """Apply PD effort targets and step sim, saving frames."""
     for f in range(num_frames):
         # Keep ball at EE (kinematic grasp)
         ee_pos_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -140,6 +156,7 @@ def step_and_render(num_frames, joint_target, frame_offset, label=""):
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
         for _ in range(SIM_STEPS_PER_FRAME):
+            apply_pd(joint_target)
             scene.write_data_to_sim()
             sim.step()
             scene.update(dt=1/120)
