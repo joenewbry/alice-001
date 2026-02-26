@@ -273,35 +273,34 @@ class BallTransferEnv(DirectRLEnv):
         right_pos = joint_pos[:, self._right_finger_idx]
         gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.5).float()
 
-        # Ball height above source (continuous, not binary)
-        ball_height_above_source = ball_pos[:, 2] - self._source_pos_local[:, 2]
-
         # Ball near target (local frame)
         ball_at_target = ball_to_target_dist < self.cfg.target_radius
-        ball_on_table = ball_pos[:, 2] < (self._source_pos_local[:, 2] + 0.01)
-        ball_lifted = ball_height_above_source > self.cfg.lift_height
+        ball_lifted = (ball_pos[:, 2] - self._source_pos_local[:, 2]) > self.cfg.lift_height
 
-        # ── Phase rewards (continuous gradients, not binary) ──
+        # ── Simplified rewards: direct ball-to-target distance ──
+        # Ball is always grasped from start, so the core task is:
+        # move the arm to bring ball closer to target.
 
-        # 1. Reach: two-scale exp for gradient at all distances
-        reach_reward = 0.5 * torch.exp(-10.0 * ee_to_ball_dist) + 0.5 * torch.exp(-100.0 * ee_to_ball_dist)
+        # 1. Reach: keep EE near ball (gradient for maintaining grasp)
+        reach_reward = torch.exp(-20.0 * ee_to_ball_dist)
 
-        # 2. Grasp: one-time bonus on first step (not ongoing — prevents stay-still optimum)
-        # is_grasped is 1.0 every step, so we give a small ongoing + bonus for newly grasped
-        grasp_reward = is_grasped * 0.1  # Small ongoing to maintain grasp
+        # 2. Grasp: small ongoing reward for maintaining kinematic grasp
+        grasp_reward = is_grasped * 0.1
 
-        # 3. Lift: CONTINUOUS height reward while grasped (0→1 for 0→5cm above source)
+        # 3. Transport: MAIN REWARD — bring ball closer to target (continuous, strong gradient)
+        # Two-scale exponential: broad gradient from far + sharp near target
+        transport_reward = (
+            0.5 * torch.exp(-20.0 * ball_to_target_dist)
+            + 0.5 * torch.exp(-100.0 * ball_to_target_dist)
+        ) * is_grasped
+
+        # 4. Lift: bonus for any upward ball movement (continuous)
+        ball_height_above_source = ball_pos[:, 2] - self._source_pos_local[:, 2]
         height_progress = torch.clamp(ball_height_above_source, 0.0, 0.05) / 0.05
         lift_reward = height_progress * is_grasped
 
-        # 4. Transport: move ball toward target while grasped (don't require lift first)
-        transport_reward = (
-            (1.0 - torch.tanh(ball_to_target_dist / 0.03))
-            * is_grasped
-        )
-
-        # 5. Drop: ball at target, on table, gripper open
-        drop_reward = ball_at_target.float() * ball_on_table.float() * gripper_open
+        # 5. Drop: ball at target, gripper open
+        drop_reward = ball_at_target.float() * gripper_open
 
         # 6. Penalties
         action_penalty = torch.sum(self._actions ** 2, dim=-1)
