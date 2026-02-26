@@ -92,44 +92,119 @@ jp = robot.data.joint_pos[0].cpu().numpy()
 hold_error = abs(jp[1] - init_joints[0, 1].item())
 print(f"  Shoulder error: {hold_error:.3f} rad ({'PASS' if hold_error < 0.1 else 'FAIL'})")
 
-# ── Test 2: Move to target ──
+# ── Test 2: Move to target (check sleep state) ──
 print("\n=== Test 2: Move to target ===")
 
-# Debug: read PhysX targets BEFORE and AFTER setting them
-print("  Before set_joint_position_target:")
+# Check if body is sleeping
 try:
-    pre_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
-    print(f"    PhysX drive targets: {pre_targets.round(3)}")
+    sleep_states = robot.root_physx_view.get_sleep_states()
+    print(f"  Sleep states before: {sleep_states}")
 except Exception as e:
-    print(f"    Could not read: {e}")
+    print(f"  Could not read sleep state: {e}")
 
+# Check PhysX targets
+pre_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
+print(f"  PhysX targets before: {pre_targets.round(3)}")
+
+# Set new target
 robot.set_joint_position_target(target_joints)
-print(f"  Called set_joint_position_target({target_joints[0].cpu().numpy().round(3)})")
-print(f"  _has_joint_pos_target: {robot._has_joint_pos_target if hasattr(robot, '_has_joint_pos_target') else 'N/A'}")
+scene.write_data_to_sim()
+post_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
+print(f"  PhysX targets after:  {post_targets.round(3)}")
 print(f"  data.joint_pos_target: {robot.data.joint_pos_target[0].cpu().numpy().round(3)}")
 
-scene.write_data_to_sim()
-print("  After write_data_to_sim:")
-try:
-    post_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
-    print(f"    PhysX drive targets: {post_targets.round(3)}")
-except Exception as e:
-    print(f"    Could not read: {e}")
-
-for step in range(300):
+for step in range(120):
     robot.set_joint_position_target(target_joints)
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
-    if step % 60 == 0:
+    if step % 30 == 0:
         jp = robot.data.joint_pos[0].cpu().numpy()
         jv = robot.data.joint_vel[0].cpu().numpy()
         ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
-        # Also read back PhysX target
         phx_tgt = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
-        print(f"  Step {step:3d}: sh={jp[1]:.3f} el={jp[2]:.3f} wp={jp[3]:.3f} "
-              f"EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f}) vel_sh={jv[1]:.2f} "
-              f"phx_tgt_sh={phx_tgt[1]:.3f}")
+        try:
+            sleep_st = robot.root_physx_view.get_sleep_states()
+            sl = sleep_st.cpu().numpy() if hasattr(sleep_st, 'cpu') else sleep_st
+        except:
+            sl = "?"
+        print(f"  Step {step:3d}: sh={jp[1]:.3f} vel_sh={jv[1]:.2f} phx_tgt={phx_tgt[1]:.3f} sleep={sl}")
+
+jp_a = robot.data.joint_pos[0].cpu().numpy()
+print(f"  Result A: shoulder error={abs(jp_a[1] - target_joints[0,1].item()):.3f} {'PASS' if abs(jp_a[1] - target_joints[0,1].item()) < 0.2 else 'FAIL'}")
+
+# ── Test 3: Wake up body then try to move ──
+print("\n=== Test 3: Wake body with velocity impulse, then move ===")
+# Write a tiny velocity to wake PhysX
+current_pos = robot.data.joint_pos.clone()
+wake_vel = torch.zeros_like(current_pos)
+wake_vel[0, 1] = 0.01  # tiny shoulder velocity
+robot.write_joint_state_to_sim(current_pos, wake_vel)
+robot.set_joint_position_target(target_joints)
+
+for step in range(120):
+    robot.set_joint_position_target(target_joints)
+    scene.write_data_to_sim()
+    sim.step()
+    scene.update(dt=1/120)
+    if step % 30 == 0:
+        jp = robot.data.joint_pos[0].cpu().numpy()
+        jv = robot.data.joint_vel[0].cpu().numpy()
+        try:
+            sleep_st = robot.root_physx_view.get_sleep_states()
+            sl = sleep_st.cpu().numpy() if hasattr(sleep_st, 'cpu') else sleep_st
+        except:
+            sl = "?"
+        print(f"  Step {step:3d}: sh={jp[1]:.3f} vel_sh={jv[1]:.2f} sleep={sl}")
+
+jp_b = robot.data.joint_pos[0].cpu().numpy()
+print(f"  Result B: shoulder error={abs(jp_b[1] - target_joints[0,1].item()):.3f} {'PASS' if abs(jp_b[1] - target_joints[0,1].item()) < 0.2 else 'FAIL'}")
+
+# ── Test 4: Disable sleep threshold via PhysX view ──
+print("\n=== Test 4: Reset state + disable sleep + move ===")
+robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
+robot.set_joint_position_target(init_joints)
+# Try to disable sleeping
+try:
+    robot.root_physx_view.set_sleep_thresholds(torch.tensor([[0.0]], device=device))
+    print("  Set sleep threshold to 0")
+except Exception as e:
+    print(f"  Could not set sleep threshold: {e}")
+    try:
+        # Alternative: wake the body each step
+        robot.root_physx_view.wake_up()
+        print("  Called wake_up()")
+    except Exception as e2:
+        print(f"  Could not wake: {e2}")
+
+# Settle with disabled sleep
+for step in range(60):
+    robot.set_joint_position_target(init_joints)
+    scene.write_data_to_sim()
+    sim.step()
+    scene.update(dt=1/120)
+
+jp = robot.data.joint_pos[0].cpu().numpy()
+print(f"  After hold: sh={jp[1]:.3f}")
+
+# Now move
+for step in range(120):
+    robot.set_joint_position_target(target_joints)
+    scene.write_data_to_sim()
+    sim.step()
+    scene.update(dt=1/120)
+    if step % 30 == 0:
+        jp = robot.data.joint_pos[0].cpu().numpy()
+        jv = robot.data.joint_vel[0].cpu().numpy()
+        try:
+            sleep_st = robot.root_physx_view.get_sleep_states()
+            sl = sleep_st.cpu().numpy() if hasattr(sleep_st, 'cpu') else sleep_st
+        except:
+            sl = "?"
+        print(f"  Step {step:3d}: sh={jp[1]:.3f} vel_sh={jv[1]:.2f} sleep={sl}")
+
+jp_c = robot.data.joint_pos[0].cpu().numpy()
+print(f"  Result C: shoulder error={abs(jp_c[1] - target_joints[0,1].item()):.3f} {'PASS' if abs(jp_c[1] - target_joints[0,1].item()) < 0.2 else 'FAIL'}")
 
 jp = robot.data.joint_pos[0].cpu().numpy()
 ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
