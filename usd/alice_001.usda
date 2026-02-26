@@ -359,7 +359,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Z:physics:damping = 4
-        float drive:Z:physics:maxForce = 2.5
+        float drive:Z:physics:maxForce = 100
         float drive:Z:physics:stiffness = 40
         uniform token drive:Z:physics:type = "force"
         uniform token physics:axis = "Z"
@@ -378,7 +378,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Y:physics:damping = 4
-        float drive:Y:physics:maxForce = 2.5
+        float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
         uniform token drive:Y:physics:type = "force"
         uniform token physics:axis = "Y"
@@ -397,7 +397,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Y:physics:damping = 4
-        float drive:Y:physics:maxForce = 2.5
+        float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
         uniform token drive:Y:physics:type = "force"
         uniform token physics:axis = "Y"
@@ -416,7 +416,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Y:physics:damping = 4
-        float drive:Y:physics:maxForce = 2.5
+        float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
         uniform token drive:Y:physics:type = "force"
         uniform token physics:axis = "Y"
@@ -435,7 +435,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Z:physics:damping = 4
-        float drive:Z:physics:maxForce = 2.5
+        float drive:Z:physics:maxForce = 100
         float drive:Z:physics:stiffness = 40
         uniform token drive:Z:physics:type = "force"
         uniform token physics:axis = "Z"
@@ -454,7 +454,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Y:physics:damping = 2
-        float drive:Y:physics:maxForce = 1
+        float drive:Y:physics:maxForce = 50
         float drive:Y:physics:stiffness = 20
         uniform token drive:Y:physics:type = "force"
         uniform token physics:axis = "Y"
@@ -473,7 +473,7 @@ def Xform "alice_001" (
     )
     {
         float drive:Y:physics:damping = 2
-        float drive:Y:physics:maxForce = 1
+        float drive:Y:physics:maxForce = 50
         float drive:Y:physics:stiffness = 20
         uniform token drive:Y:physics:type = "force"
         uniform token physics:axis = "Y"

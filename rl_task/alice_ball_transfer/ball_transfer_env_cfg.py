@@ -15,7 +15,7 @@ from isaaclab.utils import configclass
 
 # ── Robot configuration ──────────────────────────────────────────────────
 
-USD_PATH = str((Path(__file__).resolve().parents[2] / "usd" / "alice_001.usd"))
+USD_PATH = str((Path(__file__).resolve().parents[2] / "usd" / "alice_001.usda"))
 
 ALICE_001_CFG = ArticulationCfg(
     prim_path="/World/envs/env_.*/Robot",
@@ -54,9 +54,9 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=400.0,  # Must exceed gravity torque + voluntary motion — tune via DR for sim2real
-            stiffness=400.0,         # Strong position tracking so arm holds init joint angles under gravity
-            damping=40.0,            # High damping for stable settling
+            effort_limit_sim=100.0,  # USD maxForce also set to 100 (was 2.5, preventing movement)
+            stiffness=100.0,         # Strong enough to hold position under gravity
+            damping=10.0,            # Good damping ratio
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],
@@ -204,7 +204,7 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     episode_length_s = 12.0
     decimation = 2
 
-    action_scale = 5.0  # Must be high enough for noise exploration to reach 6cm target
+    action_scale = 2.0
 
     # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
     grasp_distance = 0.06
