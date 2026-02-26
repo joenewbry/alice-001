@@ -94,6 +94,28 @@ print(f"  Shoulder error: {hold_error:.3f} rad ({'PASS' if hold_error < 0.1 else
 
 # ── Test 2: Move to target ──
 print("\n=== Test 2: Move to target ===")
+
+# Debug: read PhysX targets BEFORE and AFTER setting them
+print("  Before set_joint_position_target:")
+try:
+    pre_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
+    print(f"    PhysX drive targets: {pre_targets.round(3)}")
+except Exception as e:
+    print(f"    Could not read: {e}")
+
+robot.set_joint_position_target(target_joints)
+print(f"  Called set_joint_position_target({target_joints[0].cpu().numpy().round(3)})")
+print(f"  _has_joint_pos_target: {robot._has_joint_pos_target if hasattr(robot, '_has_joint_pos_target') else 'N/A'}")
+print(f"  data.joint_pos_target: {robot.data.joint_pos_target[0].cpu().numpy().round(3)}")
+
+scene.write_data_to_sim()
+print("  After write_data_to_sim:")
+try:
+    post_targets = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
+    print(f"    PhysX drive targets: {post_targets.round(3)}")
+except Exception as e:
+    print(f"    Could not read: {e}")
+
 for step in range(300):
     robot.set_joint_position_target(target_joints)
     scene.write_data_to_sim()
@@ -103,8 +125,11 @@ for step in range(300):
         jp = robot.data.joint_pos[0].cpu().numpy()
         jv = robot.data.joint_vel[0].cpu().numpy()
         ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
+        # Also read back PhysX target
+        phx_tgt = robot.root_physx_view.get_dof_position_targets()[0].cpu().numpy()
         print(f"  Step {step:3d}: sh={jp[1]:.3f} el={jp[2]:.3f} wp={jp[3]:.3f} "
-              f"EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f}) vel_sh={jv[1]:.2f}")
+              f"EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f}) vel_sh={jv[1]:.2f} "
+              f"phx_tgt_sh={phx_tgt[1]:.3f}")
 
 jp = robot.data.joint_pos[0].cpu().numpy()
 ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
