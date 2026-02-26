@@ -41,9 +41,9 @@ class BallTransferEnv(DirectRLEnv):
 
         # Speed scales for delta target computation (1D, matches Franka pattern)
         self._robot_dof_speed_scales = torch.ones_like(self._joint_lower)
-        # Gripper joints move slower
-        self._robot_dof_speed_scales[self._left_finger_idx] = 0.1
-        self._robot_dof_speed_scales[self._right_finger_idx] = 0.1
+        # Gripper joints — faster than before so exploration can close them
+        self._robot_dof_speed_scales[self._left_finger_idx] = 0.5
+        self._robot_dof_speed_scales[self._right_finger_idx] = 0.5
 
         # Persistent joint position targets (updated incrementally each step)
         self._robot_dof_targets = torch.zeros((self.num_envs, self.robot.num_joints), device=self.device)
