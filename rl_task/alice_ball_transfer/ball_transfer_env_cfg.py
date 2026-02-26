@@ -54,9 +54,9 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=87.0,
-            stiffness=80.0,
-            damping=4.0,
+            effort_limit_sim=3.0,  # Match real LX-16A stall torque (~3 N·m)
+            stiffness=100.0,
+            damping=10.0,  # Overdamped to settle without oscillation
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],
@@ -74,7 +74,7 @@ BALL_CFG = RigidObjectCfg(
     spawn=sim_utils.SphereCfg(
         radius=0.008,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            kinematic_enabled=True,
+            kinematic_enabled=False,  # Dynamic: responds to gravity and contact
             max_depenetration_velocity=5.0,
         ),
         mass_props=sim_utils.MassPropertiesCfg(mass=0.005),
@@ -84,7 +84,7 @@ BALL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.080, 0.03, 0.333),  # 3cm Y offset from stable EE
+        pos=(-0.080, 0.03, 0.058),  # On table surface (table top=0.05 + ball radius=0.008)
     ),
 )
 
@@ -117,7 +117,7 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(
         dt=1.0 / 120.0,
         render_interval=2,
-        gravity=(0.0, 0.0, 0.0),  # Gravity disabled: PhysX drives can't hold this lightweight arm
+        gravity=(0.0, 0.0, -9.81),
         use_fabric=False,  # Required for camera sensors (usdrt.hierarchy bug in Isaac Sim 4.5)
         physx=sim_utils.PhysxCfg(
             solver_type=1,
@@ -182,23 +182,23 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     num_actions = 7
     num_states = 0
 
-    episode_length_s = 8.0
+    episode_length_s = 12.0
     decimation = 2
 
     action_scale = 0.5
 
     # Reward scales
-    reach_reward_scale = 5.0
+    reach_reward_scale = 2.0
     grasp_reward_scale = 10.0
     lift_reward_scale = 15.0
     transport_reward_scale = 10.0
     drop_reward_scale = 50.0
-    action_penalty_scale = 0.005
+    action_penalty_scale = 0.01
     velocity_penalty_scale = 0.0005
 
-    # Task positions (ball 3cm Y from stable EE, same Z/X)
-    source_pos = (-0.080, 0.03, 0.333)
-    target_pos = (-0.080, -0.03, 0.333)
+    # Task positions (ball on table surface, ~10cm apart in Y)
+    source_pos = (-0.080, 0.05, 0.058)
+    target_pos = (-0.080, -0.05, 0.058)
     target_radius = 0.02
     lift_height = 0.03
 

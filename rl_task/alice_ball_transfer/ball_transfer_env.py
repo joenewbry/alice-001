@@ -69,6 +69,9 @@ class BallTransferEnv(DirectRLEnv):
                 self.num_envs, self.robot.num_joints, device=self.device
             )
 
+        # Kinematic grasp state: tracks whether ball is "attached" to EE
+        self._ball_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
         # Logging buffers for per-phase reward tracking
         self._reward_components = {
             "reach": torch.zeros(self.num_envs, device=self.device),
@@ -153,10 +156,42 @@ class BallTransferEnv(DirectRLEnv):
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
     def _apply_action(self):
-        # Kinematic mode: directly set joint positions (bypasses PhysX drives)
-        # PhysX drives don't work reliably for this lightweight articulation
-        joint_vel = torch.zeros_like(self._robot_dof_targets)
-        self.robot.write_joint_state_to_sim(self._robot_dof_targets, joint_vel)
+        # Actuator-driven: set position targets for PD controllers (like Franka examples)
+        self.robot.set_joint_position_target(self._robot_dof_targets)
+
+        # ── Kinematic grasp attachment ──
+        # Standard approach for small-object manipulation in Isaac Lab:
+        # full contact physics is unreliable at 8mm ball scale.
+        ee_pos_w = self.robot.data.body_pos_w[:, self._ee_body_idx, :]
+        ball_pos_w = self.ball.data.root_pos_w
+        ee_to_ball_dist = torch.norm(ball_pos_w - ee_pos_w, dim=-1)
+
+        joint_pos = self.robot.data.joint_pos
+        left_pos = joint_pos[:, self._left_finger_idx]
+        right_pos = joint_pos[:, self._right_finger_idx]
+        gripper_opening = (torch.abs(left_pos) + torch.abs(right_pos)) / 2.0
+
+        # Grasp condition: EE within 2cm of ball AND gripper closing (<0.1 rad)
+        can_grasp = (ee_to_ball_dist < 0.02) & (gripper_opening < 0.1)
+        # Release condition: gripper opening (>0.15 rad)
+        releasing = gripper_opening > 0.15
+
+        # Update grasp state
+        self._ball_grasped = (self._ball_grasped | can_grasp) & ~releasing
+
+        # Snap grasped balls to EE position (with small offset below gripper)
+        if self._ball_grasped.any():
+            grasped_ids = self._ball_grasped.nonzero(as_tuple=False).squeeze(-1)
+            new_ball_pos = ee_pos_w[grasped_ids].clone()
+            new_ball_pos[:, 2] -= 0.015  # Ball hangs slightly below gripper center
+
+            # Build full pose (keep existing orientation)
+            ball_quat = self.ball.data.root_quat_w[grasped_ids]
+            ball_pose = torch.cat([new_ball_pos, ball_quat], dim=-1)
+            ball_vel = torch.zeros(len(grasped_ids), 6, device=self.device)
+
+            self.ball.write_root_pose_to_sim(ball_pose, grasped_ids)
+            self.ball.write_root_velocity_to_sim(ball_vel, grasped_ids)
 
     # ── Observations ─────────────────────────────────────────────────
 
@@ -165,8 +200,8 @@ class BallTransferEnv(DirectRLEnv):
         joint_pos = self.robot.data.joint_pos
         joint_pos_norm = 2.0 * (joint_pos - self._joint_lower) / self._joint_range - 1.0
 
-        # Implied joint velocities from last action (kinematic mode has zero sim velocities)
-        joint_vel = self._actions * self.cfg.action_scale * 0.1 if hasattr(self, '_actions') else torch.zeros_like(joint_pos)
+        # Real joint velocities from PhysX simulation
+        joint_vel = self.robot.data.joint_vel
 
         # Positions in env-local frame
         ee_pos = self._get_ee_pos_local()
@@ -182,9 +217,8 @@ class BallTransferEnv(DirectRLEnv):
             + torch.abs(joint_pos[:, self._right_finger_idx])
         ).unsqueeze(-1) / 2.0
 
-        # Proximity-based grasp detection (EE close to ball + gripper closing)
-        ee_ball_dist = torch.norm(ball_pos - ee_pos, dim=-1, keepdim=True)
-        has_contact = (ee_ball_dist < 0.02).float()  # Within 2cm
+        # Grasp state from kinematic attachment (1.0 if ball is grasped)
+        has_contact = self._ball_grasped.float().unsqueeze(-1)
 
         obs = torch.cat([
             joint_pos_norm,      # 7
@@ -211,13 +245,13 @@ class BallTransferEnv(DirectRLEnv):
         ee_to_ball_dist = torch.norm(ball_pos - ee_pos, dim=-1)
         ball_to_target_dist = torch.norm(ball_pos - self._target_pos_local, dim=-1)
 
-        # Proximity-based grasp detection
-        has_contact = (ee_to_ball_dist < 0.02).float()  # Within 2cm
+        # Use real grasp state from kinematic attachment
+        is_grasped = self._ball_grasped.float()
 
-        # Gripper closing check (fingers moving toward closed position)
+        # Gripper state
         left_pos = joint_pos[:, self._left_finger_idx]
         right_pos = joint_pos[:, self._right_finger_idx]
-        gripper_closed = ((torch.abs(left_pos) + torch.abs(right_pos)) < 0.2).float()
+        gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.3).float()
 
         # Ball height relative to source (local Z)
         ball_lifted = (
@@ -227,33 +261,31 @@ class BallTransferEnv(DirectRLEnv):
         # Ball near target laterally and at table height (local frame)
         ball_at_target = ball_to_target_dist < self.cfg.target_radius
         ball_on_table = ball_pos[:, 2] < (self._source_pos_local[:, 2] + 0.01)
-        gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.3).float()
 
         # ── Phase rewards ──
 
         # 1. Reach: two-scale exp for gradient at all distances
         reach_reward = 0.5 * torch.exp(-10.0 * ee_to_ball_dist) + 0.5 * torch.exp(-100.0 * ee_to_ball_dist)
 
-        # 2. Grasp: contact + gripper closing + near ball
-        near_ball = (ee_to_ball_dist < 0.025).float()
-        grasp_reward = has_contact * gripper_closed * near_ball
+        # 2. Grasp: actual kinematic grasp achieved
+        grasp_reward = is_grasped
 
-        # 3. Lift: ball above source height while grasping
-        lift_reward = ball_lifted.float() * has_contact
+        # 3. Lift: ball above source height while grasped
+        lift_reward = ball_lifted.float() * is_grasped
 
-        # 4. Transport: move ball toward target while lifted and grasping
+        # 4. Transport: move ball toward target while lifted and grasped
         transport_reward = (
             (1.0 - torch.tanh(ball_to_target_dist / 0.05))
             * ball_lifted.float()
-            * has_contact
+            * is_grasped
         )
 
         # 5. Drop: ball at target, on table, gripper open
         drop_reward = ball_at_target.float() * ball_on_table.float() * gripper_open
 
-        # 6. Penalties (velocity penalty uses actions since kinematic joints have zero sim vel)
+        # 6. Penalties
         action_penalty = torch.sum(self._actions ** 2, dim=-1)
-        velocity_penalty = action_penalty  # In kinematic mode, action magnitude ~= velocity
+        velocity_penalty = torch.sum(self.robot.data.joint_vel ** 2, dim=-1)
 
         # ── Total ──
         total = (
@@ -281,7 +313,7 @@ class BallTransferEnv(DirectRLEnv):
         self.extras["log"] = {
             f"reward/{k}": v.mean().item() for k, v in self._reward_components.items()
         }
-        self.extras["log"]["pct_grasping"] = has_contact.mean().item()
+        self.extras["log"]["pct_grasping"] = is_grasped.mean().item()
         self.extras["log"]["pct_lifted"] = ball_lifted.float().mean().item()
         self.extras["log"]["pct_at_target"] = ball_at_target.float().mean().item()
         self.extras["log"]["mean_ee_to_ball_dist"] = ee_to_ball_dist.mean().item()
@@ -309,6 +341,9 @@ class BallTransferEnv(DirectRLEnv):
         if env_ids is None:
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
+
+        # Clear grasp state for reset envs
+        self._ball_grasped[env_ids] = False
 
         num_reset = len(env_ids)
 

@@ -127,11 +127,8 @@ class BallTransferVisionEnv(BallTransferEnv):
         joint_pos = self.robot.data.joint_pos
         joint_pos_norm = 2.0 * (joint_pos - self._joint_lower) / self._joint_range - 1.0
 
-        # Implied velocity from actions (kinematic mode)
-        if hasattr(self, "_actions"):
-            joint_vel = self._actions * self.cfg.action_scale * 0.1
-        else:
-            joint_vel = torch.zeros_like(joint_pos)
+        # Real joint velocities from PhysX simulation
+        joint_vel = self.robot.data.joint_vel
 
         # ── Actor observation: visual features + proprioception ──
         actor_obs = torch.cat([

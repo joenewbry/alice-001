@@ -17,7 +17,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "alice_ball_transfer"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.1,  # Very low: action=0 is already optimal (EE at ball)
+        init_noise_std=0.5,  # Ball is on table, not at EE — need exploration
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[256, 256, 128],
@@ -28,7 +28,7 @@ class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.001,  # Very low entropy to allow noise reduction
+        entropy_coef=0.005,  # More exploration for reaching down to table
         num_learning_epochs=8,
         num_mini_batches=8,
         learning_rate=3e-4,

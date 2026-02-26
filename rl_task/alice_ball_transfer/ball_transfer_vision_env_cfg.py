@@ -24,7 +24,7 @@ class BallTransferVisionEnvCfg(BallTransferEnvCfg):
     sim: SimulationCfg = SimulationCfg(
         dt=1.0 / 120.0,
         render_interval=2,
-        gravity=(0.0, 0.0, 0.0),
+        gravity=(0.0, 0.0, -9.81),
         use_fabric=False,
         physx=sim_utils.PhysxCfg(
             solver_type=1,

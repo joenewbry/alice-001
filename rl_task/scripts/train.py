@@ -65,6 +65,10 @@ def main():
         env_cfg.drop_reward_scale = 0.0
         print("[CURRICULUM] Reach + grasp mode")
 
+    # Disable cameras for headless training (prevents rendering stalls on GCP VMs)
+    env_cfg.overhead_camera = None
+    env_cfg.side_camera = None
+
     # Create environment
     env = gym.make("Alice-Ball-Transfer-Direct-v0", cfg=env_cfg)
 
