@@ -67,14 +67,24 @@ print(f"  joint names: {robot.joint_names}")
 
 # ── Check link masses ──
 print("\n=== Link Masses ===")
-for i, name in enumerate(robot.body_names):
-    try:
-        mass = robot.root_physx_view.get_link_masses()[0, i].item()
-        print(f"  {name}: {mass:.4f} kg")
-    except:
-        pass
-total_mass = robot.root_physx_view.get_link_masses()[0].sum().item()
-print(f"  TOTAL: {total_mass:.4f} kg")
+try:
+    inv_masses = robot.root_physx_view.get_inv_masses()[0]
+    for i, name in enumerate(robot.body_names):
+        inv_m = inv_masses[i].item()
+        mass = 1.0 / inv_m if inv_m > 0 else float('inf')
+        print(f"  {name}: {mass:.4f} kg (inv={inv_m:.6f})")
+    total = sum(1.0/inv_masses[i].item() for i in range(len(robot.body_names)) if inv_masses[i].item() > 0)
+    print(f"  TOTAL: {total:.4f} kg")
+except Exception as e:
+    print(f"  Could not read masses: {e}")
+
+# Also check inertias
+print("\n=== Link Inertias ===")
+try:
+    inertias = robot.root_physx_view.get_link_incoming_joint_force()
+    print(f"  Shape: {inertias.shape}")
+except Exception as e:
+    print(f"  Could not read inertias: {e}")
 
 # ── Test A: Current gains (stiffness=100, maxForce=100) ──
 print("\n=== Test A: Current gains (stiffness=100, maxForce=100) ===")
