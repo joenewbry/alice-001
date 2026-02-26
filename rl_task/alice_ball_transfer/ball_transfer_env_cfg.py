@@ -219,12 +219,13 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     velocity_penalty_scale = 0.0001
 
     # Task positions — target in X-Z plane (base_joint locked, only shoulder/elbow/wrist work)
-    # Source: where the grasped ball starts (near EE rest position)
-    # Target: 5cm higher and 4cm closer to base (reachable via shoulder/elbow/wrist)
+    # Source: EE rest position (where ball starts, attached to EE)
+    # Target: workspace sweep verified reachable at sh=-0.8, el=-0.9, wp=-0.1
+    # Ball = EE (no offset), so target = reachable EE position
     source_pos = (-0.091, 0.0, 0.159)
-    target_pos = (-0.05, 0.0, 0.20)
-    target_radius = 0.02
-    lift_height = 0.03
+    target_pos = (-0.025, 0.0, 0.185)  # Verified reachable by sweep_workspace.py
+    target_radius = 0.015
+    lift_height = 0.02
 
     # ── Domain randomization (off by default for Stage 1) ───────────
     enable_domain_rand: bool = False

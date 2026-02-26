@@ -205,11 +205,10 @@ class BallTransferEnv(DirectRLEnv):
         # Update grasp state
         self._ball_grasped = (self._ball_grasped | can_grasp) & ~releasing
 
-        # Snap grasped balls to EE position (with small offset below gripper)
+        # Snap grasped balls to EE position (no offset — ball tracks EE exactly)
         if self._ball_grasped.any():
             grasped_ids = self._ball_grasped.nonzero(as_tuple=False).squeeze(-1)
             new_ball_pos = ee_pos_w[grasped_ids].clone()
-            new_ball_pos[:, 2] -= 0.015  # Ball hangs slightly below gripper center
 
             # Build full pose (keep existing orientation)
             ball_quat = self.ball.data.root_quat_w[grasped_ids]
@@ -287,8 +286,9 @@ class BallTransferEnv(DirectRLEnv):
         # Ball is always grasped and attached to EE, so this is really
         # "move the arm to bring ball to target."
 
-        # Init distance is ~0.073m. Linear reward: +1 for each cm closer.
-        init_dist = 0.075  # approximate starting ball-to-target distance
+        # Init distance: source=(-0.091,0,0.159), target=(-0.025,0,0.185)
+        # dist = sqrt(0.066² + 0.026²) ≈ 0.071m
+        init_dist = 0.072  # approximate starting ball-to-target distance
         reach_reward = torch.zeros_like(ee_to_ball_dist)
         grasp_reward = torch.zeros_like(ee_to_ball_dist)
         lift_reward = torch.zeros_like(ee_to_ball_dist)
