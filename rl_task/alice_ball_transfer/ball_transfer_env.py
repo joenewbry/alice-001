@@ -283,45 +283,25 @@ class BallTransferEnv(DirectRLEnv):
         ball_at_target = ball_to_target_dist < self.cfg.target_radius
         ball_lifted = (ball_pos[:, 2] - self._source_pos_local[:, 2]) > self.cfg.lift_height
 
-        # ── Simplified rewards: direct ball-to-target distance ──
-        # Ball is always grasped from start, so the core task is:
-        # move the arm to bring ball closer to target.
+        # ── Reward: minimize ball-to-target distance (linear, clear gradient) ──
+        # Ball is always grasped and attached to EE, so this is really
+        # "move the arm to bring ball to target."
 
-        # 1. Reach: keep EE near ball (gradient for maintaining grasp)
-        reach_reward = torch.exp(-20.0 * ee_to_ball_dist)
+        # Init distance is ~0.073m. Linear reward: +1 for each cm closer.
+        init_dist = 0.075  # approximate starting ball-to-target distance
+        reach_reward = torch.zeros_like(ee_to_ball_dist)
+        grasp_reward = torch.zeros_like(ee_to_ball_dist)
+        lift_reward = torch.zeros_like(ee_to_ball_dist)
+        drop_reward = torch.zeros_like(ee_to_ball_dist)
 
-        # 2. Grasp: small ongoing reward for maintaining kinematic grasp
-        grasp_reward = is_grasped * 0.1
+        # Transport: linear distance reduction (positive when closer than start)
+        transport_reward = (init_dist - ball_to_target_dist) * 100.0  # +1 per 1mm closer
 
-        # 3. Transport: MAIN REWARD — bring ball closer to target (continuous, strong gradient)
-        # Two-scale exponential: broad gradient from far + sharp near target
-        transport_reward = (
-            0.5 * torch.exp(-20.0 * ball_to_target_dist)
-            + 0.5 * torch.exp(-100.0 * ball_to_target_dist)
-        ) * is_grasped
-
-        # 4. Lift: bonus for any upward ball movement (continuous)
-        ball_height_above_source = ball_pos[:, 2] - self._source_pos_local[:, 2]
-        height_progress = torch.clamp(ball_height_above_source, 0.0, 0.05) / 0.05
-        lift_reward = height_progress * is_grasped
-
-        # 5. Drop: disabled in Stage 1 (fingers force-closed)
-        drop_reward = torch.zeros_like(reach_reward)
-
-        # 6. Penalties
+        # Small action penalty to prevent wild movements
         action_penalty = torch.sum(self._actions ** 2, dim=-1)
-        velocity_penalty = torch.sum(self.robot.data.joint_vel ** 2, dim=-1)
+        velocity_penalty = torch.zeros_like(action_penalty)
 
-        # ── Total ──
-        total = (
-            self.cfg.reach_reward_scale * reach_reward
-            + self.cfg.grasp_reward_scale * grasp_reward
-            + self.cfg.lift_reward_scale * lift_reward
-            + self.cfg.transport_reward_scale * transport_reward
-            + self.cfg.drop_reward_scale * drop_reward
-            - self.cfg.action_penalty_scale * action_penalty
-            - self.cfg.velocity_penalty_scale * velocity_penalty
-        )
+        total = transport_reward - 0.01 * action_penalty
 
         # Store for logging
         self._reward_components["reach"] = reach_reward
