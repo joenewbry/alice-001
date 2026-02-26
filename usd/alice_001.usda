@@ -361,7 +361,7 @@ def Xform "alice_001" (
         float drive:Z:physics:damping = 4
         float drive:Z:physics:maxForce = 100
         float drive:Z:physics:stiffness = 40
-        uniform token drive:Z:physics:type = "force"
+        uniform token drive:Z:physics:type = "acceleration"
         uniform token physics:axis = "Z"
         rel physics:body0 = </alice_001/base_link>
         rel physics:body1 = </alice_001/shoulder_link>
@@ -380,7 +380,7 @@ def Xform "alice_001" (
         float drive:Y:physics:damping = 4
         float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
-        uniform token drive:Y:physics:type = "force"
+        uniform token drive:Y:physics:type = "acceleration"
         uniform token physics:axis = "Y"
         rel physics:body0 = </alice_001/shoulder_link>
         rel physics:body1 = </alice_001/upper_arm_link>
@@ -399,7 +399,7 @@ def Xform "alice_001" (
         float drive:Y:physics:damping = 4
         float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
-        uniform token drive:Y:physics:type = "force"
+        uniform token drive:Y:physics:type = "acceleration"
         uniform token physics:axis = "Y"
         rel physics:body0 = </alice_001/upper_arm_link>
         rel physics:body1 = </alice_001/lower_arm_link>
@@ -418,7 +418,7 @@ def Xform "alice_001" (
         float drive:Y:physics:damping = 4
         float drive:Y:physics:maxForce = 5000
         float drive:Y:physics:stiffness = 40
-        uniform token drive:Y:physics:type = "force"
+        uniform token drive:Y:physics:type = "acceleration"
         uniform token physics:axis = "Y"
         rel physics:body0 = </alice_001/lower_arm_link>
         rel physics:body1 = </alice_001/wrist_link>
@@ -437,7 +437,7 @@ def Xform "alice_001" (
         float drive:Z:physics:damping = 4
         float drive:Z:physics:maxForce = 100
         float drive:Z:physics:stiffness = 40
-        uniform token drive:Z:physics:type = "force"
+        uniform token drive:Z:physics:type = "acceleration"
         uniform token physics:axis = "Z"
         rel physics:body0 = </alice_001/wrist_link>
         rel physics:body1 = </alice_001/gripper_base>
@@ -456,7 +456,7 @@ def Xform "alice_001" (
         float drive:Y:physics:damping = 2
         float drive:Y:physics:maxForce = 50
         float drive:Y:physics:stiffness = 20
-        uniform token drive:Y:physics:type = "force"
+        uniform token drive:Y:physics:type = "acceleration"
         uniform token physics:axis = "Y"
         rel physics:body0 = </alice_001/gripper_base>
         rel physics:body1 = </alice_001/left_finger>
@@ -475,7 +475,7 @@ def Xform "alice_001" (
         float drive:Y:physics:damping = 2
         float drive:Y:physics:maxForce = 50
         float drive:Y:physics:stiffness = 20
-        uniform token drive:Y:physics:type = "force"
+        uniform token drive:Y:physics:type = "acceleration"
         uniform token physics:axis = "Y"
         rel physics:body0 = </alice_001/gripper_base>
         rel physics:body1 = </alice_001/right_finger>

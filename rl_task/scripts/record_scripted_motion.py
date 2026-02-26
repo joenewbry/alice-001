@@ -93,24 +93,9 @@ target_joints = torch.tensor(
 # ── Find body indices ──
 ee_idx = robot.find_bodies("gripper_base")[0][0]
 
-# ── PD gains (applied as effort targets — PhysX position drives are broken) ──
-# Gains tuned for explicit integration stability at 120Hz.
-PD_STIFFNESS = torch.tensor([40, 40, 40, 40, 40, 2000, 2000],
-                            device=robot.device, dtype=torch.float32)
-PD_DAMPING = torch.tensor([1, 1, 1, 1, 1, 50, 50],
-                          device=robot.device, dtype=torch.float32)
-MAX_EFFORT = torch.tensor([50, 50, 50, 50, 50, 200, 200],
-                          device=robot.device, dtype=torch.float32)
-
-def apply_pd(target_pos):
-    """Compute and apply PD torques as effort targets."""
-    current_pos = robot.data.joint_pos[0:1]
-    current_vel = robot.data.joint_vel[0:1]
-    vel_clamped = torch.clamp(current_vel, -10.0, 10.0)
-    error = target_pos - current_pos
-    torque = PD_STIFFNESS * error - PD_DAMPING * vel_clamped
-    torque = torch.clamp(torque, -MAX_EFFORT, MAX_EFFORT)
-    robot.set_joint_effort_target(torque)
+def apply_position_target(target_pos):
+    """Set PhysX position targets — acceleration-mode PD handles tracking."""
+    robot.set_joint_position_target(target_pos)
 
 # ── Set initial pose ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
@@ -118,7 +103,7 @@ robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
 # Let initial pose settle with effort-based PD
 print("Settling initial pose...")
 for _ in range(120):
-    apply_pd(init_joints)
+    apply_position_target(init_joints)
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
@@ -158,7 +143,7 @@ def step_and_render(num_frames, joint_target, frame_offset, label=""):
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
         for _ in range(SIM_STEPS_PER_FRAME):
-            apply_pd(joint_target)
+            apply_position_target(joint_target)
             scene.write_data_to_sim()
             sim.step()
             scene.update(dt=1/120)

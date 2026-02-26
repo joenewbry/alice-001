@@ -1,4 +1,4 @@
-"""Verify arm motion with effort-based PD. No cameras — just trajectory plot."""
+"""Verify arm motion with acceleration-mode PD drives. No cameras — just trajectory plot."""
 import argparse
 parser = argparse.ArgumentParser()
 from isaaclab.app import AppLauncher
@@ -54,33 +54,17 @@ ee_idx = robot.find_bodies("gripper_base")[0][0]
 device = robot.device
 env_ids = torch.tensor([0], device=device)
 
-# ── PD controller (effort-based — PhysX position drives broken) ──
-# Gains tuned for explicit integration stability at 120Hz.
-# PhysX stiffness/damping = 0 → no conflicting spring.
-PD_KP = torch.tensor([40, 40, 40, 40, 40, 2000, 2000], device=device, dtype=torch.float32)
-PD_KD = torch.tensor([1, 1, 1, 1, 1, 50, 50], device=device, dtype=torch.float32)
-MAX_T = torch.tensor([50, 50, 50, 50, 50, 200, 200], device=device, dtype=torch.float32)
-
-_pd_step = 0
-def apply_pd(target_pos):
-    global _pd_step
-    pos = robot.data.joint_pos[0:1]
-    vel = robot.data.joint_vel[0:1]
-    # Clamp velocity to prevent damping-term explosion (explicit integration stability)
-    vel_clamped = torch.clamp(vel, -10.0, 10.0)
-    error = target_pos - pos
-    torque = PD_KP * error - PD_KD * vel_clamped
-    torque = torch.clamp(torque, -MAX_T, MAX_T)
-
-    if _pd_step < 5 or (_pd_step < 30 and _pd_step % 5 == 0):
-        print(f"  [PD step {_pd_step}] pos={pos[0,:3].cpu().numpy().round(3)} "
-              f"vel={vel[0,:3].cpu().numpy().round(3)} "
-              f"err={error[0,:3].cpu().numpy().round(3)} "
-              f"torque={torque[0,:3].cpu().numpy().round(1)}")
-    if torch.isnan(torque).any():
-        print(f"  [PD step {_pd_step}] NaN DETECTED! pos={pos} vel={vel} err={error}")
-    _pd_step += 1
-    robot.set_joint_effort_target(torque)
+# Print PhysX drive properties to verify acceleration mode
+print("=== PhysX Drive Properties ===")
+try:
+    stiff = robot.root_physx_view.get_dof_stiffnesses()[0].cpu().numpy()
+    damp = robot.root_physx_view.get_dof_dampings()[0].cpu().numpy()
+    maxf = robot.root_physx_view.get_dof_max_forces()[0].cpu().numpy()
+    print(f"  stiffnesses: {stiff.round(2)}")
+    print(f"  dampings:    {damp.round(2)}")
+    print(f"  max forces:  {maxf.round(2)}")
+except Exception as e:
+    print(f"  Could not read: {e}")
 
 # Joint configs
 init_joints = torch.tensor([[0.0, -0.3, -1.8, -0.5, 0.0, 0.0, 0.0]], device=device)
@@ -88,16 +72,27 @@ target_joints = torch.tensor([[0.0, -0.8, -0.9, -0.1, 0.0, 0.0, 0.0]], device=de
 
 # ── Initialize ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
-print("Settling initial pose with effort PD...")
-for _ in range(240):  # 2 seconds to settle
-    apply_pd(init_joints)
+print("Settling initial pose with position targets...")
+for i in range(240):  # 2 seconds to settle
+    robot.set_joint_position_target(init_joints)
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
+    if i < 5 or (i < 30 and i % 5 == 0) or i % 60 == 0:
+        jp = robot.data.joint_pos[0].cpu().numpy()
+        jv = robot.data.joint_vel[0].cpu().numpy()
+        print(f"  [settle {i:3d}] sh={jp[1]:.4f} el={jp[2]:.4f} wp={jp[3]:.4f} "
+              f"vel_sh={jv[1]:.3f} vel_el={jv[2]:.3f}")
 
 jp = robot.data.joint_pos[0].cpu().numpy()
 ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
 print(f"Settled: joints={jp.round(3)} EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f})")
+
+# Check for NaN
+if np.isnan(jp).any():
+    print("ERROR: NaN detected after settling! Aborting.")
+    simulation_app.close()
+    import sys; sys.exit(1)
 
 # Snap ball to EE
 ee_pos = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -110,7 +105,7 @@ traj = {"frame": [], "ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [],
         "sh": [], "el": [], "wp": [], "target_sh": [], "target_el": [], "target_wp": []}
 
 def step_sim(num_steps, target, label=""):
-    """Step sim with PD and track trajectory."""
+    """Step sim with position targets and track trajectory."""
     for s in range(num_steps):
         # Keep ball at EE
         ee_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -118,7 +113,7 @@ def step_sim(num_steps, target, label=""):
         ball.write_root_pose_to_sim(bp, env_ids)
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=device), env_ids)
 
-        apply_pd(target)
+        robot.set_joint_position_target(target)
         scene.write_data_to_sim()
         sim.step()
         scene.update(dt=1/120)
@@ -147,7 +142,7 @@ print("Phase 1: Hold at init...")
 step_sim(240, init_joints, "HOLD")
 
 # ── Phase 2: Move to target (720 steps = 6s) ──
-print("Phase 2: PD-driving to target...")
+print("Phase 2: Position-target driving to target...")
 step_sim(720, target_joints, "MOVE")
 
 # ── Phase 3: Hold at target (240 steps = 2s) ──
@@ -162,6 +157,17 @@ dist = np.linalg.norm(bp[:3] - target_pos)
 print(f"\nFinal EE: ({ep[0]:.4f}, {ep[1]:.4f}, {ep[2]:.4f})")
 print(f"Final Ball: ({bp[0]:.4f}, {bp[1]:.4f}, {bp[2]:.4f})")
 print(f"Ball-to-target distance: {dist:.4f}m")
+
+jp = robot.data.joint_pos[0].cpu().numpy()
+target_jp = target_joints[0].cpu().numpy()
+print(f"Joint errors: sh={abs(jp[1]-target_jp[1]):.4f} el={abs(jp[2]-target_jp[2]):.4f} wp={abs(jp[3]-target_jp[3]):.4f}")
+
+if dist < 0.02:
+    print("SUCCESS: Ball reached target!")
+elif dist < 0.05:
+    print("CLOSE: Ball near target but not quite there.")
+else:
+    print("FAIL: Ball did not reach target.")
 
 # ── Generate trajectory plot ──
 print("\nGenerating trajectory plot...")
@@ -227,7 +233,7 @@ ax4.set_title('PD Tracking Error')
 ax4.legend()
 ax4.grid(True, alpha=0.3)
 
-plt.suptitle('Alice-001: Effort-based PD Motion Proof', fontsize=14, fontweight='bold')
+plt.suptitle('Alice-001: Acceleration-Mode PD Motion Proof', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(f"{args.output_dir}/trajectory_plot.png", dpi=150)
 print(f"Saved: {args.output_dir}/trajectory_plot.png")
