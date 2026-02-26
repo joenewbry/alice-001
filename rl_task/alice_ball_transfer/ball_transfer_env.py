@@ -90,6 +90,17 @@ class BallTransferEnv(DirectRLEnv):
         print(f"[INIT] Joint ranges: {self._joint_range.cpu().numpy().round(4)}")
         print(f"[INIT] Joint names: {self.robot.joint_names}")
 
+        # Read actual PhysX drive properties (to verify USD/config override)
+        try:
+            max_forces = self.robot.root_physx_view.get_dof_max_forces()
+            print(f"[INIT] PhysX actual max forces: {max_forces[0].cpu().numpy().round(2)}")
+            stiffnesses = self.robot.root_physx_view.get_dof_stiffnesses()
+            print(f"[INIT] PhysX actual stiffnesses: {stiffnesses[0].cpu().numpy().round(2)}")
+            dampings = self.robot.root_physx_view.get_dof_dampings()
+            print(f"[INIT] PhysX actual dampings: {dampings[0].cpu().numpy().round(2)}")
+        except Exception as e:
+            print(f"[INIT] Could not read PhysX drive props: {e}")
+
         # Logging buffers for per-phase reward tracking
         self._reward_components = {
             "reach": torch.zeros(self.num_envs, device=self.device),
