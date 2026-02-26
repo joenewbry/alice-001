@@ -78,13 +78,17 @@ class BallTransferEnv(DirectRLEnv):
         # Kinematic grasp state: tracks whether ball is "attached" to EE
         self._ball_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
-        # Diagnostic: print initial EE and ball positions
+        # Diagnostic: print initial EE and ball positions + joint limits
         ee0 = self._get_ee_pos_local()[0].cpu().numpy()
         ball0 = self._get_ball_pos_local()[0].cpu().numpy()
         jp0 = self.robot.data.joint_pos[0].cpu().numpy()
         dist0 = ((ee0 - ball0) ** 2).sum() ** 0.5
         print(f"[INIT] EE=({ee0[0]:.4f},{ee0[1]:.4f},{ee0[2]:.4f}) Ball=({ball0[0]:.4f},{ball0[1]:.4f},{ball0[2]:.4f}) dist={dist0:.4f}")
         print(f"[INIT] Joints: {jp0.round(3)}")
+        print(f"[INIT] Joint lower limits: {self._joint_lower.cpu().numpy().round(4)}")
+        print(f"[INIT] Joint upper limits: {self._joint_upper.cpu().numpy().round(4)}")
+        print(f"[INIT] Joint ranges: {self._joint_range.cpu().numpy().round(4)}")
+        print(f"[INIT] Joint names: {self.robot.joint_names}")
 
         # Logging buffers for per-phase reward tracking
         self._reward_components = {
