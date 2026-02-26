@@ -36,7 +36,8 @@ print(f"\n=== Config: stiffness={args.stiffness}, damping={args.damping}, maxFor
 
 # ── Setup sim ──
 gravity = (0.0, 0.0, 0.0) if args.no_gravity else (0.0, 0.0, -9.81)
-sim_cfg = SimulationCfg(dt=1/120, gravity=gravity, render_interval=1)
+# CRITICAL: test with use_fabric=True — use_fabric=False may break PhysX drives
+sim_cfg = SimulationCfg(dt=1/120, gravity=gravity, render_interval=1, use_fabric=True)
 sim = sim_utils.SimulationContext(sim_cfg)
 
 ground = sim_utils.GroundPlaneCfg()
