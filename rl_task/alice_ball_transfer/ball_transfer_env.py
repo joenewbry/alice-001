@@ -188,8 +188,12 @@ class BallTransferEnv(DirectRLEnv):
 
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
-        # Force fingers closed — policy controls arm transport only (Stage 1)
-        # Prevents random exploration from accidentally releasing the ball
+        # Force unused joints — policy only controls shoulder, elbow, wrist_pitch (Stage 1)
+        # base_joint (idx 0): locked in USD, zeroing prevents wasted exploration
+        # wrist_roll (idx 4): not useful for X-Z plane task
+        # fingers: force-closed to prevent accidental ball release
+        self._robot_dof_targets[:, 0] = self._init_joint_pos[0]   # base_joint
+        self._robot_dof_targets[:, 4] = self._init_joint_pos[4]   # wrist_roll
         self._robot_dof_targets[:, self._left_finger_idx] = 0.0
         self._robot_dof_targets[:, self._right_finger_idx] = 0.0
 

@@ -11,28 +11,28 @@ from isaaclab_rl.rsl_rl import (
 
 @configclass
 class AliceBallTransferPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 48
+    num_steps_per_env = 24   # Match shorter episodes (4s = 240 steps)
     max_iterations = 5000
     save_interval = 250
     experiment_name = "alice_ball_transfer"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.3,  # Moderate exploration — arm can now actually move
+        init_noise_std=1.0,  # High exploration — only 3 effective joints, need to find transport
         actor_obs_normalization=False,
         critic_obs_normalization=False,
-        actor_hidden_dims=[256, 256, 128],
-        critic_hidden_dims=[256, 256, 128],
+        actor_hidden_dims=[128, 128],   # Smaller network for simpler 3-joint task
+        critic_hidden_dims=[128, 128],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.001,  # Low entropy — arm has real headroom now, don't need noise exploration
-        num_learning_epochs=8,
-        num_mini_batches=8,
+        entropy_coef=0.01,   # Higher entropy for exploration in 3-joint space
+        num_learning_epochs=5,
+        num_mini_batches=4,
         learning_rate=3e-4,
-        schedule="fixed",  # Fixed LR prevents noise explosion from adaptive KL
+        schedule="fixed",
         gamma=0.99,
         lam=0.95,
         desired_kl=0.01,

@@ -201,10 +201,10 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     num_actions = 7
     num_states = 0
 
-    episode_length_s = 12.0
+    episode_length_s = 4.0   # Short episodes for faster credit assignment
     decimation = 2
 
-    action_scale = 2.0
+    action_scale = 5.0      # Bigger movements for 3-joint effective control
 
     # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
     grasp_distance = 0.06
