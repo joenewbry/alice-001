@@ -6,7 +6,7 @@ import os
 parser = argparse.ArgumentParser(description="Record motion proof")
 parser.add_argument(
     "--mode",
-    choices=["sweep", "policy_state", "policy_vision", "ball_drop", "collapse"],
+    choices=["sweep", "sweep_single", "policy_state", "policy_vision", "ball_drop", "collapse"],
     default="sweep",
 )
 parser.add_argument("--checkpoint", type=str, default="")
@@ -26,6 +26,9 @@ parser.add_argument(
 parser.add_argument("--action_gain", type=float, default=1.0, help="Scale sweep action amplitude")
 parser.add_argument("--env_action_scale", type=float, default=-1.0, help="Override env action_scale if > 0")
 parser.add_argument("--collapse_no_apply", action="store_true", help="Disable RL env _apply_action for collapse probes")
+parser.add_argument("--sweep_joint", type=int, default=0, help="Joint index (0..4) for sweep_single mode")
+parser.add_argument("--record_views", type=str, default="overhead,side,wrist", help="Comma-separated views")
+parser.add_argument("--min_frame_diff", type=float, default=0.5, help="Static-frame warning threshold")
 
 from isaaclab.app import AppLauncher
 
@@ -67,6 +70,7 @@ def save_video(frames, path, fps):
 
 def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    views = {v.strip().lower() for v in args_cli.record_views.split(",") if v.strip()}
 
     if args_cli.mode == "policy_vision":
         from alice_ball_transfer.ball_transfer_vision_env_cfg import BallTransferVisionEnvCfg
@@ -87,6 +91,7 @@ def main():
             BALL_CFG.spawn.rigid_props.kinematic_enabled = False
             # Spawn ball above workspace so falling motion is obvious.
             BALL_CFG.init_state.pos = (-0.08, 0.0, 0.52)
+            BALL_CFG.spawn.radius = 0.02
 
         if args_cli.mode == "collapse":
             env_cfg.sim.gravity = (0.0, 0.0, -9.81)
@@ -106,7 +111,7 @@ def main():
 
     # Camera framing presets. Wider framing helps verify whole-arm motion.
     if hasattr(env_cfg, "overhead_camera") and env_cfg.overhead_camera is not None:
-        if args_cli.disable_overhead:
+        if args_cli.disable_overhead or "overhead" not in views:
             env_cfg.overhead_camera = None
         else:
             env_cfg.overhead_camera.height = args_cli.camera_size
@@ -117,6 +122,15 @@ def main():
                 env_cfg.overhead_camera.offset.pos = (-0.10, 0.0, 0.60)
             else:
                 env_cfg.overhead_camera.offset.pos = (-0.14, 0.0, 0.80)
+    if hasattr(env_cfg, "side_camera") and env_cfg.side_camera is not None:
+        if "side" not in views:
+            env_cfg.side_camera = None
+        else:
+            env_cfg.side_camera.height = args_cli.camera_size
+            env_cfg.side_camera.width = int(args_cli.camera_size * 1.33)
+    if hasattr(env_cfg, "wrist_camera") and env_cfg.wrist_camera is not None:
+        if "wrist" not in views:
+            env_cfg.wrist_camera = None
 
     env = gym.make(env_id, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env)
@@ -140,6 +154,7 @@ def main():
     n_actions = 7
 
     overhead_frames = []
+    side_frames = []
     wrist_frames = []
 
     ball_z_series = []
@@ -150,6 +165,11 @@ def main():
             actions = torch.zeros(n_envs, n_actions, device=device)
             j = (step // 40) % 5
             sign = 1.0 if ((step // 20) % 2 == 0) else -1.0
+            actions[:, j] = float(np.clip(sign * args_cli.action_gain, -1.0, 1.0))
+        elif args_cli.mode == "sweep_single":
+            actions = torch.zeros(n_envs, n_actions, device=device)
+            sign = 1.0 if ((step // 30) % 2 == 0) else -1.0
+            j = int(np.clip(args_cli.sweep_joint, 0, 4))
             actions[:, j] = float(np.clip(sign * args_cli.action_gain, -1.0, 1.0))
         elif args_cli.mode in ("ball_drop", "collapse"):
             actions = torch.zeros(n_envs, n_actions, device=device)
@@ -175,6 +195,9 @@ def main():
         if hasattr(raw_env, "overhead_camera"):
             rgb = raw_env.overhead_camera.data.output["rgb"][0, :, :, :3].detach().cpu().numpy()
             overhead_frames.append(draw_overlay(rgb, overlay))
+        if hasattr(raw_env, "side_camera"):
+            rgb = raw_env.side_camera.data.output["rgb"][0, :, :, :3].detach().cpu().numpy()
+            side_frames.append(draw_overlay(rgb, overlay))
 
         if hasattr(raw_env, "wrist_camera"):
             rgb = raw_env.wrist_camera.data.output["rgb"][0, :, :, :3].detach().cpu().numpy()
@@ -187,6 +210,8 @@ def main():
 
     if overhead_frames:
         save_video(overhead_frames, os.path.join(out_dir, f"{args_cli.mode}_overhead.mp4"), args_cli.fps)
+    if side_frames:
+        save_video(side_frames, os.path.join(out_dir, f"{args_cli.mode}_side.mp4"), args_cli.fps)
     if wrist_frames:
         save_video(wrist_frames, os.path.join(out_dir, f"{args_cli.mode}_wrist.mp4"), args_cli.fps)
 
@@ -196,10 +221,21 @@ def main():
     joint_ranges = (joint_arr.max(axis=0) - joint_arr.min(axis=0)).tolist() if joint_arr.size else []
     ee_disp_norm = float(np.linalg.norm(ee_arr.max(axis=0) - ee_arr.min(axis=0))) if ee_arr.size else 0.0
 
+    def frame_diff(frames):
+        if len(frames) < 2:
+            return None
+        diffs = [float(np.mean(np.abs(frames[i].astype(np.float32) - frames[i - 1].astype(np.float32)))) for i in range(1, len(frames))]
+        return float(np.mean(diffs))
+
+    overhead_diff = frame_diff(overhead_frames)
+    side_diff = frame_diff(side_frames)
+    wrist_diff = frame_diff(wrist_frames)
+
     summary = {
         "mode": args_cli.mode,
         "steps": args_cli.num_steps,
         "overhead_frames": len(overhead_frames),
+        "side_frames": len(side_frames),
         "wrist_frames": len(wrist_frames),
         "ball_z_min": float(np.min(ball_z_series)) if ball_z_series else None,
         "ball_z_max": float(np.max(ball_z_series)) if ball_z_series else None,
@@ -207,10 +243,18 @@ def main():
         "joint_ranges": [float(v) for v in joint_ranges],
         "arm_joint_min_range": (float(np.min(joint_ranges[:5])) if len(joint_ranges) >= 5 else None),
         "ee_disp_norm": ee_disp_norm,
+        "overhead_frame_diff": overhead_diff,
+        "side_frame_diff": side_diff,
+        "wrist_frame_diff": wrist_diff,
+        "views_requested": sorted(list(views)),
     }
     import json
     with open(os.path.join(out_dir, f"{args_cli.mode}_summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
+    if (overhead_diff is not None and overhead_diff < args_cli.min_frame_diff) and (
+        side_diff is not None and side_diff < args_cli.min_frame_diff
+    ):
+        print(f"WARNING: low visual frame diff (overhead={overhead_diff:.3f}, side={side_diff:.3f})")
 
     print("Saved motion proof to", out_dir)
 

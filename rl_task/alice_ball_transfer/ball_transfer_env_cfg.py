@@ -150,6 +150,27 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
         ),
     )
 
+    # Side camera for human-visible articulation debugging.
+    side_camera: CameraCfg = CameraCfg(
+        prim_path="/World/envs/env_.*/side_cam",
+        update_period=0,
+        height=480,
+        width=640,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=12.0,
+            focus_distance=0.40,
+            horizontal_aperture=20.0,
+            clipping_range=(0.01, 5.0),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(0.25, -0.24, 0.22),
+            # 45 deg yaw + slight downward pitch
+            rot=(0.3536, 0.1464, 0.3536, 0.8536),
+            convention="ros",
+        ),
+    )
+
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=2048,
         env_spacing=1.0,

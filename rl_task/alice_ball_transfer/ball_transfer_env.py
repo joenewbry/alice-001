@@ -121,6 +121,9 @@ class BallTransferEnv(DirectRLEnv):
         if hasattr(self.cfg, 'overhead_camera') and self.cfg.overhead_camera is not None:
             self.overhead_camera = Camera(self.cfg.overhead_camera)
             self.scene.sensors["overhead_camera"] = self.overhead_camera
+        if hasattr(self.cfg, "side_camera") and self.cfg.side_camera is not None:
+            self.side_camera = Camera(self.cfg.side_camera)
+            self.scene.sensors["side_camera"] = self.side_camera
 
     # ── Pre-physics (apply actions) ──────────────────────────────────
 
