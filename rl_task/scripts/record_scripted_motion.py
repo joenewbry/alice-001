@@ -152,6 +152,11 @@ def step_and_render(num_frames, joint_target, frame_offset, label=""):
             sim.step()
             scene.update(dt=1/120)
 
+        # Explicit render to sync PhysX body transforms → USD scene graph.
+        # Without this, write_joint_state_to_sim updates PhysX but cameras
+        # render stale USD positions.
+        sim.render()
+
         frame = frame_offset + f
         save_frame(frame, args.output_dir, overhead_cam, side_cam)
 
