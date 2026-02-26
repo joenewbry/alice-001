@@ -204,7 +204,7 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     episode_length_s = 12.0
     decimation = 2
 
-    action_scale = 1.0
+    action_scale = 5.0  # Must be high enough for noise exploration to reach 6cm target
 
     # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
     grasp_distance = 0.06
