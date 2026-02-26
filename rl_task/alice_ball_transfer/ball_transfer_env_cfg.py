@@ -204,7 +204,10 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     episode_length_s = 12.0
     decimation = 2
 
-    action_scale = 0.5
+    action_scale = 1.0
+
+    # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
+    grasp_distance = 0.06
 
     # Reward scales
     reach_reward_scale = 5.0

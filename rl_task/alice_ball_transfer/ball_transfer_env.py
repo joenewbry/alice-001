@@ -175,8 +175,9 @@ class BallTransferEnv(DirectRLEnv):
         right_pos = joint_pos[:, self._right_finger_idx]
         gripper_opening = (torch.abs(left_pos) + torch.abs(right_pos)) / 2.0
 
-        # Grasp condition: EE within 2cm of ball AND gripper closing (<0.1 rad)
-        can_grasp = (ee_to_ball_dist < 0.02) & (gripper_opening < 0.1)
+        # Grasp condition: EE within grasp_distance of ball AND gripper closing (<0.1 rad)
+        grasp_dist = getattr(self.cfg, 'grasp_distance', 0.02)
+        can_grasp = (ee_to_ball_dist < grasp_dist) & (gripper_opening < 0.1)
         # Release condition: gripper opening (>0.15 rad)
         releasing = gripper_opening > 0.15
 
