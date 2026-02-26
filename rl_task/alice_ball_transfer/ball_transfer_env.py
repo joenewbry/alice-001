@@ -273,30 +273,30 @@ class BallTransferEnv(DirectRLEnv):
         right_pos = joint_pos[:, self._right_finger_idx]
         gripper_open = ((torch.abs(left_pos) + torch.abs(right_pos)) > 0.5).float()
 
-        # Ball height relative to source (local Z)
-        ball_lifted = (
-            ball_pos[:, 2] - self._source_pos_local[:, 2]
-        ) > self.cfg.lift_height
+        # Ball height above source (continuous, not binary)
+        ball_height_above_source = ball_pos[:, 2] - self._source_pos_local[:, 2]
 
-        # Ball near target laterally and at table height (local frame)
+        # Ball near target (local frame)
         ball_at_target = ball_to_target_dist < self.cfg.target_radius
         ball_on_table = ball_pos[:, 2] < (self._source_pos_local[:, 2] + 0.01)
+        ball_lifted = ball_height_above_source > self.cfg.lift_height
 
-        # ── Phase rewards ──
+        # ── Phase rewards (continuous gradients, not binary) ──
 
         # 1. Reach: two-scale exp for gradient at all distances
         reach_reward = 0.5 * torch.exp(-10.0 * ee_to_ball_dist) + 0.5 * torch.exp(-100.0 * ee_to_ball_dist)
 
-        # 2. Grasp: actual kinematic grasp achieved
-        grasp_reward = is_grasped
+        # 2. Grasp: one-time bonus on first step (not ongoing — prevents stay-still optimum)
+        # is_grasped is 1.0 every step, so we give a small ongoing + bonus for newly grasped
+        grasp_reward = is_grasped * 0.1  # Small ongoing to maintain grasp
 
-        # 3. Lift: ball above source height while grasped
-        lift_reward = ball_lifted.float() * is_grasped
+        # 3. Lift: CONTINUOUS height reward while grasped (0→1 for 0→5cm above source)
+        height_progress = torch.clamp(ball_height_above_source, 0.0, 0.05) / 0.05
+        lift_reward = height_progress * is_grasped
 
-        # 4. Transport: move ball toward target while lifted and grasped
+        # 4. Transport: move ball toward target while grasped (don't require lift first)
         transport_reward = (
-            (1.0 - torch.tanh(ball_to_target_dist / 0.05))
-            * ball_lifted.float()
+            (1.0 - torch.tanh(ball_to_target_dist / 0.03))
             * is_grasped
         )
 

@@ -209,14 +209,14 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
     grasp_distance = 0.06
 
-    # Reward scales
-    reach_reward_scale = 5.0
-    grasp_reward_scale = 10.0
-    lift_reward_scale = 15.0
-    transport_reward_scale = 10.0
+    # Reward scales (grasp is trivial — focus gradient on lift/transport)
+    reach_reward_scale = 2.0
+    grasp_reward_scale = 5.0      # Reduced: grasp is trivially achieved
+    lift_reward_scale = 30.0      # High: continuous height reward needs strong signal
+    transport_reward_scale = 20.0  # High: continuous distance-to-target
     drop_reward_scale = 50.0
-    action_penalty_scale = 0.01
-    velocity_penalty_scale = 0.0005
+    action_penalty_scale = 0.005   # Reduced: allow more exploration
+    velocity_penalty_scale = 0.0002
 
     # Task positions (ball at arm's gravity-settled EE pos, target 6cm away in Y)
     source_pos = (-0.091, 0.0, 0.159)
