@@ -54,15 +54,15 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_pitch_joint",
                 "wrist_roll_joint",
             ],
-            effort_limit_sim=500.0,
-            stiffness=50000.0,   # Acceleration-mode: units are 1/s². Need high values
-            damping=500.0,       # to overcome gravity (α_grav ≈ 300 rad/s² on shoulder)
+            effort_limit_sim=100.0,
+            stiffness=100.0,  # PhysX internal spring holds at init position (force mode)
+            damping=10.0,     # Our effort targets shift the equilibrium to desired position
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],
             effort_limit_sim=200.0,
-            stiffness=50000.0,
-            damping=500.0,
+            stiffness=2e3,
+            damping=1e2,
         ),
     },
 )

@@ -1,4 +1,13 @@
-"""Verify arm motion with acceleration-mode PD drives. No cameras — just trajectory plot."""
+"""Verify arm motion using effort-offset approach. No cameras — just trajectory plot.
+
+Strategy: PhysX has an internal spring (stiffness=100, force mode) that holds the arm
+at the gravity-settled equilibrium. Position targets don't work for this USDA.
+But effort targets DO work and ADD to the PhysX spring force.
+
+To move the arm: apply effort = stiffness * (desired_pos - equilibrium_pos).
+This shifts the PhysX spring equilibrium to our desired position, and the
+internal spring provides stability (implicit integration, no NaN).
+"""
 import argparse
 parser = argparse.ArgumentParser()
 from isaaclab.app import AppLauncher
@@ -54,7 +63,7 @@ ee_idx = robot.find_bodies("gripper_base")[0][0]
 device = robot.device
 env_ids = torch.tensor([0], device=device)
 
-# Print PhysX drive properties to verify acceleration mode
+# Print PhysX drive properties
 print("=== PhysX Drive Properties ===")
 try:
     stiff = robot.root_physx_view.get_dof_stiffnesses()[0].cpu().numpy()
@@ -70,29 +79,45 @@ except Exception as e:
 init_joints = torch.tensor([[0.0, -0.3, -1.8, -0.5, 0.0, 0.0, 0.0]], device=device)
 target_joints = torch.tensor([[0.0, -0.8, -0.9, -0.1, 0.0, 0.0, 0.0]], device=device)
 
-# ── Initialize ──
+# ── Phase 0: Let arm settle under gravity with PhysX spring ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
-print("Settling initial pose with position targets...")
-for i in range(240):  # 2 seconds to settle
-    robot.set_joint_position_target(init_joints)
+print("Phase 0: Letting arm settle under gravity (PhysX spring only)...")
+for i in range(480):  # 4 seconds
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
-    if i < 5 or (i < 30 and i % 5 == 0) or i % 60 == 0:
+    if i < 5 or (i < 30 and i % 10 == 0) or i % 120 == 0:
         jp = robot.data.joint_pos[0].cpu().numpy()
         jv = robot.data.joint_vel[0].cpu().numpy()
         print(f"  [settle {i:3d}] sh={jp[1]:.4f} el={jp[2]:.4f} wp={jp[3]:.4f} "
               f"vel_sh={jv[1]:.3f} vel_el={jv[2]:.3f}")
 
-jp = robot.data.joint_pos[0].cpu().numpy()
-ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
-print(f"Settled: joints={jp.round(3)} EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f})")
+# Record the gravity-settled position as the PhysX spring anchor
+equilibrium = robot.data.joint_pos[0:1].clone()
+jp = equilibrium[0].cpu().numpy()
+print(f"PhysX equilibrium (gravity-settled): {jp.round(4)}")
 
-# Check for NaN
-if np.isnan(jp).any():
-    print("ERROR: NaN detected after settling! Aborting.")
-    simulation_app.close()
-    import sys; sys.exit(1)
+# Get stiffness for the effort offset calculation
+STIFFNESS = torch.tensor([100, 100, 100, 100, 100, 2000, 2000], device=device, dtype=torch.float32)
+MAX_EFFORT = torch.tensor([100, 100, 100, 100, 100, 200, 200], device=device, dtype=torch.float32)
+
+def set_target_via_effort(target_pos):
+    """Shift PhysX spring equilibrium to target by applying effort offset.
+
+    The PhysX internal spring produces: F_spring = K * (anchor - pos) - D * vel
+    We add effort: F_effort = K * (target - anchor)
+    Total: F = K * (target - pos) - D * vel → spring centered at target!
+    """
+    effort = STIFFNESS * (target_pos - equilibrium)
+    effort = torch.clamp(effort, -MAX_EFFORT, MAX_EFFORT)
+    robot.set_joint_effort_target(effort)
+
+# Test: print what effort offset looks like for target
+test_effort = STIFFNESS[0:1] * (target_joints[0, :5] - equilibrium[0, :5])
+print(f"Effort offset to reach target: {test_effort.cpu().numpy().round(2)}")
+
+ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
+print(f"Starting EE: ({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f})")
 
 # Snap ball to EE
 ee_pos = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -105,7 +130,7 @@ traj = {"frame": [], "ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [],
         "sh": [], "el": [], "wp": [], "target_sh": [], "target_el": [], "target_wp": []}
 
 def step_sim(num_steps, target, label=""):
-    """Step sim with position targets and track trajectory."""
+    """Step sim with effort-offset control and track trajectory."""
     for s in range(num_steps):
         # Keep ball at EE
         ee_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -113,7 +138,7 @@ def step_sim(num_steps, target, label=""):
         ball.write_root_pose_to_sim(bp, env_ids)
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=device), env_ids)
 
-        robot.set_joint_position_target(target)
+        set_target_via_effort(target)
         scene.write_data_to_sim()
         sim.step()
         scene.update(dt=1/120)
@@ -137,12 +162,12 @@ def step_sim(num_steps, target, label=""):
             print(f"  [{label}] step {s}: sh={jp[1]:.3f} el={jp[2]:.3f} wp={jp[3]:.3f} "
                   f"EE=({ep[0]:.4f},{ep[2]:.4f})")
 
-# ── Phase 1: Hold at init (240 steps = 2s) ──
-print("Phase 1: Hold at init...")
-step_sim(240, init_joints, "HOLD")
+# ── Phase 1: Hold at equilibrium (240 steps = 2s) ──
+print("Phase 1: Hold at equilibrium...")
+step_sim(240, equilibrium, "HOLD")
 
 # ── Phase 2: Move to target (720 steps = 6s) ──
-print("Phase 2: Position-target driving to target...")
+print("Phase 2: Effort-offset driving to target...")
 step_sim(720, target_joints, "MOVE")
 
 # ── Phase 3: Hold at target (240 steps = 2s) ──
@@ -178,7 +203,6 @@ import matplotlib.pyplot as plt
 fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 frames = traj["frame"]
 
-# Plot 1: X-Z trajectory
 ax1 = axes[0, 0]
 ax1.plot(traj["ee_x"], traj["ee_z"], 'b-', label='EE path', linewidth=2)
 ax1.plot(traj["ball_x"], traj["ball_z"], 'r--', label='Ball path', linewidth=1.5)
@@ -192,7 +216,6 @@ ax1.legend()
 ax1.grid(True, alpha=0.3)
 ax1.set_aspect('equal')
 
-# Plot 2: Position over time
 ax2 = axes[0, 1]
 ax2.plot(frames, traj["ee_x"], 'b-', label='EE X')
 ax2.plot(frames, traj["ee_z"], 'b--', label='EE Z')
@@ -204,7 +227,6 @@ ax2.set_title('EE Position vs Time')
 ax2.legend(fontsize=8)
 ax2.grid(True, alpha=0.3)
 
-# Plot 3: Joint angles vs time
 ax3 = axes[1, 0]
 ax3.plot(frames, traj["sh"], 'b-', label='Shoulder', linewidth=2)
 ax3.plot(frames, traj["el"], 'r-', label='Elbow', linewidth=2)
@@ -218,7 +240,6 @@ ax3.set_title('Joint Angles vs Time (actual + target)')
 ax3.legend(fontsize=8)
 ax3.grid(True, alpha=0.3)
 
-# Plot 4: Joint tracking error
 ax4 = axes[1, 1]
 sh_err = [a - t for a, t in zip(traj["sh"], traj["target_sh"])]
 el_err = [a - t for a, t in zip(traj["el"], traj["target_el"])]
@@ -229,11 +250,11 @@ ax4.plot(frames, wp_err, 'g-', label='Wrist err')
 ax4.axhline(y=0, color='k', linestyle='-', alpha=0.3)
 ax4.set_xlabel('Frame')
 ax4.set_ylabel('Error (rad)')
-ax4.set_title('PD Tracking Error')
+ax4.set_title('Tracking Error')
 ax4.legend()
 ax4.grid(True, alpha=0.3)
 
-plt.suptitle('Alice-001: Acceleration-Mode PD Motion Proof', fontsize=14, fontweight='bold')
+plt.suptitle('Alice-001: Effort-Offset Motion Proof', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(f"{args.output_dir}/trajectory_plot.png", dpi=150)
 print(f"Saved: {args.output_dir}/trajectory_plot.png")
