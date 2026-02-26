@@ -188,6 +188,11 @@ class BallTransferEnv(DirectRLEnv):
 
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
+        # Force fingers closed — policy controls arm transport only (Stage 1)
+        # Prevents random exploration from accidentally releasing the ball
+        self._robot_dof_targets[:, self._left_finger_idx] = 0.0
+        self._robot_dof_targets[:, self._right_finger_idx] = 0.0
+
     def _apply_action(self):
         # Actuator-driven: set position targets for PD controllers (like Franka examples)
         self.robot.set_joint_position_target(self._robot_dof_targets)
@@ -208,8 +213,9 @@ class BallTransferEnv(DirectRLEnv):
         # Natural resting opening is ~0.146 rad, so threshold at 0.2 catches resting state
         grasp_dist = getattr(self.cfg, 'grasp_distance', 0.02)
         can_grasp = (ee_to_ball_dist < grasp_dist) & (gripper_opening < 0.2)
-        # Release condition: gripper actively opened wide (>0.3 rad)
-        releasing = gripper_opening > 0.3
+        # Release condition: gripper actively opened very wide (>1.0 rad)
+        # High threshold since fingers are force-closed in Stage 1
+        releasing = gripper_opening > 1.0
 
         # Update grasp state
         self._ball_grasped = (self._ball_grasped | can_grasp) & ~releasing
@@ -314,8 +320,8 @@ class BallTransferEnv(DirectRLEnv):
         height_progress = torch.clamp(ball_height_above_source, 0.0, 0.05) / 0.05
         lift_reward = height_progress * is_grasped
 
-        # 5. Drop: ball at target, gripper open
-        drop_reward = ball_at_target.float() * gripper_open
+        # 5. Drop: disabled in Stage 1 (fingers force-closed)
+        drop_reward = torch.zeros_like(reach_reward)
 
         # 6. Penalties
         action_penalty = torch.sum(self._actions ** 2, dim=-1)
@@ -357,23 +363,18 @@ class BallTransferEnv(DirectRLEnv):
         self.extras["log"]["mean_base_joint_pos"] = joint_pos[:, 0].mean().item()
         self.extras["log"]["std_base_joint_pos"] = joint_pos[:, 0].std().item()
 
-        # Periodic diagnostic: per-env details every 500 steps
+        # Periodic diagnostic: per-env details every 1000 steps
         if hasattr(self, '_diag_counter'):
             self._diag_counter += 1
         else:
             self._diag_counter = 0
-        if self._diag_counter % 200 == 0:
-            jp = joint_pos[0].cpu().numpy()
+        if self._diag_counter % 1000 == 0:
             bp = ball_pos[0].cpu().numpy()
             ep = ee_pos[0].cpu().numpy()
-            tgt = self._robot_dof_targets[0].cpu().numpy()
-            jv = self.robot.data.joint_vel[0].cpu().numpy()
-            print(f"[DIAG step={self._diag_counter}] ALL joints:  {jp.round(4)}")
-            print(f"[DIAG step={self._diag_counter}] ALL targets: {tgt.round(4)}")
-            print(f"[DIAG step={self._diag_counter}] ALL vels:    {jv.round(4)}")
             print(f"[DIAG step={self._diag_counter}] EE=({ep[0]:.3f},{ep[1]:.3f},{ep[2]:.3f}) "
                   f"ball=({bp[0]:.3f},{bp[1]:.3f},{bp[2]:.3f}) "
-                  f"ball2tgt={ball_to_target_dist[0]:.4f} grasped={self._ball_grasped[0].item()}")
+                  f"ball2tgt={ball_to_target_dist[0]:.4f} grasped={self._ball_grasped[0].item()} "
+                  f"pct_grasp={is_grasped.mean():.2f}")
 
         return total
 
@@ -384,17 +385,10 @@ class BallTransferEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length
         terminated = torch.zeros_like(time_out)
 
-        # Terminate if ball falls off the pedestal
-        # Pedestal top at z=0.15, ball starts at z=0.159
-        # z < 0.12 means ball has clearly fallen off pedestal
+        # Terminate if ball falls off workspace (only when not grasped)
         ball_pos = self._get_ball_pos_local()
-        ball_fell = ball_pos[:, 2] < 0.12
-        # Check XY bounds (pedestal is 20cm x 20cm centered at -0.091, -0.03)
-        ball_off_xy = (
-            (torch.abs(ball_pos[:, 0] + 0.091) > 0.15)
-            | (torch.abs(ball_pos[:, 1] + 0.03) > 0.15)
-        )
-        terminated = terminated | ball_fell | ball_off_xy
+        ball_fell = (ball_pos[:, 2] < 0.05) & ~self._ball_grasped
+        terminated = terminated | ball_fell
 
         return terminated, time_out
 
