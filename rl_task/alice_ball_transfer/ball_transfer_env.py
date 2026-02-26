@@ -72,17 +72,6 @@ class BallTransferEnv(DirectRLEnv):
         # Kinematic grasp state: tracks whether ball is "attached" to EE
         self._ball_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
-        # Effort-offset PD: PhysX spring holds at equilibrium, we shift it via effort.
-        # K matches PhysX stiffness so effort_offset = K * (target - equilibrium)
-        # shifts the spring center exactly to target.
-        self._pd_kp = torch.tensor([100, 100, 100, 100, 100, 2000, 2000],
-                                   device=self.device, dtype=torch.float32)
-        self._pd_max_effort = torch.tensor([100, 100, 100, 100, 100, 200, 200],
-                                           device=self.device, dtype=torch.float32)
-        # Equilibrium position: where the arm settles under gravity with PhysX spring.
-        # Updated after each reset (gravity settling).
-        self._equilibrium_pos = self.robot.data.joint_pos.clone()
-
         # Diagnostic: print initial EE and ball positions + joint limits
         ee0 = self._get_ee_pos_local()[0].cpu().numpy()
         ball0 = self._get_ball_pos_local()[0].cpu().numpy()
@@ -188,12 +177,15 @@ class BallTransferEnv(DirectRLEnv):
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
     def _apply_action(self):
-        # Effort-offset approach: PhysX has an internal spring (stiffness=100, force mode)
-        # that holds at gravity-settled equilibrium. Position targets are broken for this
-        # USDA. Instead, apply effort = K * (desired - equilibrium) to shift the spring.
-        effort = self._pd_kp * (self._robot_dof_targets - self._equilibrium_pos)
-        effort = torch.clamp(effort, -self._pd_max_effort, self._pd_max_effort)
-        self.robot.set_joint_effort_target(effort)
+        # Smooth kinematic interpolation toward targets.
+        # PhysX position drives and effort PD are both unstable for this USDA
+        # (drive:type="force" + very low inertia → explicit integration NaN).
+        # write_joint_state_to_sim provides reliable, NaN-free position control.
+        # Alpha=0.1 → time constant ~0.08s at 120Hz, fast enough for RL.
+        alpha = 0.1
+        current = self.robot.data.joint_pos.clone()
+        interp = current + alpha * (self._robot_dof_targets - current)
+        self.robot.write_joint_state_to_sim(interp, torch.zeros_like(interp))
 
         # ── Kinematic grasp attachment ──
         # Standard approach for small-object manipulation in Isaac Lab:
@@ -400,9 +392,6 @@ class BallTransferEnv(DirectRLEnv):
 
         # Reset persistent DOF targets to init state
         self._robot_dof_targets[env_ids] = joint_pos
-        # Update equilibrium for effort-offset control
-        # (gravity settling happens during first sim steps; init pos is close enough)
-        self._equilibrium_pos[env_ids] = joint_pos
 
         # Reset ball to source position with noise
         ball_state = self.ball.data.default_root_state[env_ids].clone()

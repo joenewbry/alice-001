@@ -1,13 +1,4 @@
-"""Verify arm motion using effort-offset approach. No cameras — just trajectory plot.
-
-Strategy: PhysX has an internal spring (stiffness=100, force mode) that holds the arm
-at the gravity-settled equilibrium. Position targets don't work for this USDA.
-But effort targets DO work and ADD to the PhysX spring force.
-
-To move the arm: apply effort = stiffness * (desired_pos - equilibrium_pos).
-This shifts the PhysX spring equilibrium to our desired position, and the
-internal spring provides stability (implicit integration, no NaN).
-"""
+"""Verify arm motion with kinematic interpolation. No cameras — just trajectory plot."""
 import argparse
 parser = argparse.ArgumentParser()
 from isaaclab.app import AppLauncher
@@ -63,61 +54,20 @@ ee_idx = robot.find_bodies("gripper_base")[0][0]
 device = robot.device
 env_ids = torch.tensor([0], device=device)
 
-# Print PhysX drive properties
-print("=== PhysX Drive Properties ===")
-try:
-    stiff = robot.root_physx_view.get_dof_stiffnesses()[0].cpu().numpy()
-    damp = robot.root_physx_view.get_dof_dampings()[0].cpu().numpy()
-    maxf = robot.root_physx_view.get_dof_max_forces()[0].cpu().numpy()
-    print(f"  stiffnesses: {stiff.round(2)}")
-    print(f"  dampings:    {damp.round(2)}")
-    print(f"  max forces:  {maxf.round(2)}")
-except Exception as e:
-    print(f"  Could not read: {e}")
-
 # Joint configs
 init_joints = torch.tensor([[0.0, -0.3, -1.8, -0.5, 0.0, 0.0, 0.0]], device=device)
 target_joints = torch.tensor([[0.0, -0.8, -0.9, -0.1, 0.0, 0.0, 0.0]], device=device)
 
-# ── Phase 0: Let arm settle under gravity with PhysX spring ──
+# ── Initialize ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
-print("Phase 0: Letting arm settle under gravity (PhysX spring only)...")
-for i in range(480):  # 4 seconds
+for _ in range(10):
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
-    if i < 5 or (i < 30 and i % 10 == 0) or i % 120 == 0:
-        jp = robot.data.joint_pos[0].cpu().numpy()
-        jv = robot.data.joint_vel[0].cpu().numpy()
-        print(f"  [settle {i:3d}] sh={jp[1]:.4f} el={jp[2]:.4f} wp={jp[3]:.4f} "
-              f"vel_sh={jv[1]:.3f} vel_el={jv[2]:.3f}")
 
-# Record the gravity-settled position as the PhysX spring anchor
-equilibrium = robot.data.joint_pos[0:1].clone()
-jp = equilibrium[0].cpu().numpy()
-print(f"PhysX equilibrium (gravity-settled): {jp.round(4)}")
-
-# Get stiffness for the effort offset calculation
-STIFFNESS = torch.tensor([100, 100, 100, 100, 100, 2000, 2000], device=device, dtype=torch.float32)
-MAX_EFFORT = torch.tensor([100, 100, 100, 100, 100, 200, 200], device=device, dtype=torch.float32)
-
-def set_target_via_effort(target_pos):
-    """Shift PhysX spring equilibrium to target by applying effort offset.
-
-    The PhysX internal spring produces: F_spring = K * (anchor - pos) - D * vel
-    We add effort: F_effort = K * (target - anchor)
-    Total: F = K * (target - pos) - D * vel → spring centered at target!
-    """
-    effort = STIFFNESS * (target_pos - equilibrium)
-    effort = torch.clamp(effort, -MAX_EFFORT, MAX_EFFORT)
-    robot.set_joint_effort_target(effort)
-
-# Test: print what effort offset looks like for target
-test_effort = STIFFNESS[0:1] * (target_joints[0, :5] - equilibrium[0, :5])
-print(f"Effort offset to reach target: {test_effort.cpu().numpy().round(2)}")
-
+jp = robot.data.joint_pos[0].cpu().numpy()
 ee = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
-print(f"Starting EE: ({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f})")
+print(f"Init: joints={jp.round(3)} EE=({ee[0]:.4f},{ee[1]:.4f},{ee[2]:.4f})")
 
 # Snap ball to EE
 ee_pos = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -129,8 +79,10 @@ ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=device), env_ids)
 traj = {"frame": [], "ee_x": [], "ee_z": [], "ball_x": [], "ball_z": [],
         "sh": [], "el": [], "wp": [], "target_sh": [], "target_el": [], "target_wp": []}
 
+ALPHA = 0.1  # Smoothing factor (time constant ~0.08s at 120Hz)
+
 def step_sim(num_steps, target, label=""):
-    """Step sim with effort-offset control and track trajectory."""
+    """Step sim with kinematic interpolation and track trajectory."""
     for s in range(num_steps):
         # Keep ball at EE
         ee_w = robot.data.body_pos_w[0, ee_idx, :].unsqueeze(0)
@@ -138,7 +90,11 @@ def step_sim(num_steps, target, label=""):
         ball.write_root_pose_to_sim(bp, env_ids)
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=device), env_ids)
 
-        set_target_via_effort(target)
+        # Kinematic interpolation toward target
+        current = robot.data.joint_pos[0:1].clone()
+        interp = current + ALPHA * (target - current)
+        robot.write_joint_state_to_sim(interp, torch.zeros_like(interp))
+
         scene.write_data_to_sim()
         sim.step()
         scene.update(dt=1/120)
@@ -162,17 +118,17 @@ def step_sim(num_steps, target, label=""):
             print(f"  [{label}] step {s}: sh={jp[1]:.3f} el={jp[2]:.3f} wp={jp[3]:.3f} "
                   f"EE=({ep[0]:.4f},{ep[2]:.4f})")
 
-# ── Phase 1: Hold at equilibrium (240 steps = 2s) ──
-print("Phase 1: Hold at equilibrium...")
-step_sim(240, equilibrium, "HOLD")
+# ── Phase 1: Hold at init (120 steps = 1s) ──
+print("Phase 1: Hold at init...")
+step_sim(120, init_joints, "HOLD")
 
-# ── Phase 2: Move to target (720 steps = 6s) ──
-print("Phase 2: Effort-offset driving to target...")
-step_sim(720, target_joints, "MOVE")
+# ── Phase 2: Move to target (480 steps = 4s) ──
+print("Phase 2: Kinematic interpolation to target...")
+step_sim(480, target_joints, "MOVE")
 
-# ── Phase 3: Hold at target (240 steps = 2s) ──
+# ── Phase 3: Hold at target (120 steps = 1s) ──
 print("Phase 3: Hold at target...")
-step_sim(240, target_joints, "HOLD")
+step_sim(120, target_joints, "HOLD")
 
 # ── Final state ──
 ep = robot.data.body_pos_w[0, ee_idx].cpu().numpy()
@@ -190,7 +146,7 @@ print(f"Joint errors: sh={abs(jp[1]-target_jp[1]):.4f} el={abs(jp[2]-target_jp[2
 if dist < 0.02:
     print("SUCCESS: Ball reached target!")
 elif dist < 0.05:
-    print("CLOSE: Ball near target but not quite there.")
+    print("CLOSE: Ball near target.")
 else:
     print("FAIL: Ball did not reach target.")
 
@@ -254,7 +210,7 @@ ax4.set_title('Tracking Error')
 ax4.legend()
 ax4.grid(True, alpha=0.3)
 
-plt.suptitle('Alice-001: Effort-Offset Motion Proof', fontsize=14, fontweight='bold')
+plt.suptitle('Alice-001: Kinematic Interpolation Motion Proof', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(f"{args.output_dir}/trajectory_plot.png", dpi=150)
 print(f"Saved: {args.output_dir}/trajectory_plot.png")

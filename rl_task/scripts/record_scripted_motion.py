@@ -93,9 +93,13 @@ target_joints = torch.tensor(
 # ── Find body indices ──
 ee_idx = robot.find_bodies("gripper_base")[0][0]
 
-def apply_position_target(target_pos):
-    """Set PhysX position targets — acceleration-mode PD handles tracking."""
-    robot.set_joint_position_target(target_pos)
+ALPHA = 0.1  # Kinematic interpolation smoothing factor
+
+def apply_kinematic_interp(target_pos):
+    """Smoothly interpolate toward target via write_joint_state_to_sim."""
+    current = robot.data.joint_pos[0:1].clone()
+    interp = current + ALPHA * (target_pos - current)
+    robot.write_joint_state_to_sim(interp, torch.zeros_like(interp))
 
 # ── Set initial pose ──
 robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
@@ -103,7 +107,7 @@ robot.write_joint_state_to_sim(init_joints, torch.zeros_like(init_joints))
 # Let initial pose settle with effort-based PD
 print("Settling initial pose...")
 for _ in range(120):
-    apply_position_target(init_joints)
+    apply_kinematic_interp(init_joints)
     scene.write_data_to_sim()
     sim.step()
     scene.update(dt=1/120)
@@ -143,7 +147,7 @@ def step_and_render(num_frames, joint_target, frame_offset, label=""):
         ball.write_root_velocity_to_sim(torch.zeros(1, 6, device=robot.device), env_ids)
 
         for _ in range(SIM_STEPS_PER_FRAME):
-            apply_position_target(joint_target)
+            apply_kinematic_interp(joint_target)
             scene.write_data_to_sim()
             sim.step()
             scene.update(dt=1/120)
