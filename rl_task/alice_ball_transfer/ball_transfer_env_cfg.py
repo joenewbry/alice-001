@@ -84,7 +84,7 @@ BALL_CFG = RigidObjectCfg(
         ),
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        pos=(-0.091, 0.0, 0.159),  # At arm's gravity-settled EE position
+        pos=(-0.086, 0.0, 0.205),  # At arm's gravity-settled EE position
     ),
 )
 
@@ -219,14 +219,13 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     action_penalty_scale = 0.001   # Very small: don't penalize movement
     velocity_penalty_scale = 0.0001
 
-    # Task positions — target in X-Z plane (base_joint locked, only shoulder/elbow/wrist work)
-    # Source: EE rest position (where ball starts, attached to EE)
-    # Target: workspace sweep verified reachable at sh=-0.8, el=-0.9, wp=-0.1
-    # Ball = EE (no offset), so target = reachable EE position
-    source_pos = (-0.091, 0.0, 0.159)
-    target_pos = (-0.025, 0.0, 0.185)  # Verified reachable by sweep_workspace.py
-    target_radius = 0.015
-    lift_height = 0.02
+    # Task positions — gravity-settled EE positions from VM test (verify_motion v9)
+    # Source: EE at init joints [0, -0.384, -2.094, -0.082, 0, ...] under gravity
+    # Target: EE at target joints [0, -0.810, -0.907, -0.087, 0, ...] under gravity
+    source_pos = (-0.086, 0.0, 0.205)
+    target_pos = (-0.154, 0.0, 0.243)  # Gravity-settled FK at target joints
+    target_radius = 0.02
+    lift_height = 0.01  # Smaller: motion is mostly lateral, not vertical
 
     # ── Domain randomization (off by default for Stage 1) ───────────
     enable_domain_rand: bool = False

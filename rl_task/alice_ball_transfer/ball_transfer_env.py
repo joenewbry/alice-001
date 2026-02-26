@@ -380,7 +380,7 @@ class BallTransferEnv(DirectRLEnv):
         self._ball_grasped[env_ids] = False
         if hasattr(self, '_prev_ball_to_target_dist'):
             # Will be properly set on first reward computation after reset
-            self._prev_ball_to_target_dist[env_ids] = 0.072  # approx init dist
+            self._prev_ball_to_target_dist[env_ids] = 0.076  # approx init dist
 
         num_reset = len(env_ids)
 

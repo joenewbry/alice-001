@@ -93,7 +93,7 @@ target_joints = torch.tensor(
 # ── Find body indices ──
 ee_idx = robot.find_bodies("gripper_base")[0][0]
 
-ALPHA = 0.1  # Kinematic interpolation smoothing factor
+ALPHA = 0.5  # Kinematic interpolation smoothing factor (tight tracking)
 
 def apply_kinematic_interp(target_pos):
     """Smoothly interpolate toward target via write_joint_state_to_sim."""
@@ -187,7 +187,7 @@ ep = robot.data.body_pos_w[0, ee_idx, :].cpu().numpy()
 bp = ball.data.root_pos_w[0].cpu().numpy()
 print(f"\nFinal EE: ({ep[0]:.4f}, {ep[1]:.4f}, {ep[2]:.4f})")
 print(f"Final Ball: ({bp[0]:.4f}, {bp[1]:.4f}, {bp[2]:.4f})")
-target_pos = np.array([-0.025, 0.0, 0.185])
+target_pos = np.array([-0.154, 0.0, 0.243])
 dist = np.linalg.norm(bp[:3] - target_pos)
 print(f"Ball-to-target distance: {dist:.4f}m")
 
@@ -207,7 +207,7 @@ try:
     ax1.plot(trajectory["ball_x"], trajectory["ball_z"], 'r--', label='Ball path', linewidth=1.5)
     ax1.plot(trajectory["ee_x"][0], trajectory["ee_z"][0], 'go', markersize=10, label='Start')
     ax1.plot(trajectory["ee_x"][-1], trajectory["ee_z"][-1], 'rs', markersize=10, label='End')
-    ax1.plot(-0.025, 0.185, 'k*', markersize=15, label='Target')
+    ax1.plot(-0.154, 0.243, 'k*', markersize=15, label='Target')
     ax1.set_xlabel('X position (m)')
     ax1.set_ylabel('Z position (m)')
     ax1.set_title('EE & Ball Trajectory (X-Z plane)')
@@ -221,8 +221,8 @@ try:
     ax2.plot(frames, trajectory["ee_z"], 'b--', label='EE Z')
     ax2.plot(frames, trajectory["ball_x"], 'r-', label='Ball X')
     ax2.plot(frames, trajectory["ball_z"], 'r--', label='Ball Z')
-    ax2.axhline(y=-0.025, color='gray', linestyle=':', label='Target X')
-    ax2.axhline(y=0.185, color='gray', linestyle='-.', label='Target Z')
+    ax2.axhline(y=-0.154, color='gray', linestyle=':', label='Target X')
+    ax2.axhline(y=0.243, color='gray', linestyle='-.', label='Target Z')
     ax2.set_xlabel('Frame')
     ax2.set_ylabel('Position (m)')
     ax2.set_title('Position vs Time')
