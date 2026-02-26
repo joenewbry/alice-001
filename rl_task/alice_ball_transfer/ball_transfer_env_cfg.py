@@ -204,7 +204,8 @@ class BallTransferEnvCfg(DirectRLEnvCfg):
     episode_length_s = 4.0   # Short episodes for faster credit assignment
     decimation = 2
 
-    action_scale = 1.0      # Absolute control: max offset from init in radians
+    action_scale = 2.0      # Absolute control: max offset from init in radians
+                            # Optimal actions ≈ (-0.25, +0.45, +0.2) — close to initial mean 0
 
     # Grasp distance threshold (arm's min reach is ~5cm from ball on pedestal)
     grasp_distance = 0.06
