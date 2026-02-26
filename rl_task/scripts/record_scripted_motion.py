@@ -94,19 +94,21 @@ target_joints = torch.tensor(
 ee_idx = robot.find_bodies("gripper_base")[0][0]
 
 # ── PD gains (applied as effort targets — PhysX position drives are broken) ──
-PD_STIFFNESS = torch.tensor([100, 100, 100, 100, 100, 2000, 2000],
+# Gains tuned for explicit integration stability at 120Hz.
+PD_STIFFNESS = torch.tensor([40, 40, 40, 40, 40, 2000, 2000],
                             device=robot.device, dtype=torch.float32)
-PD_DAMPING = torch.tensor([10, 10, 10, 10, 10, 100, 100],
+PD_DAMPING = torch.tensor([1, 1, 1, 1, 1, 50, 50],
                           device=robot.device, dtype=torch.float32)
-MAX_EFFORT = torch.tensor([100, 100, 100, 100, 100, 200, 200],
+MAX_EFFORT = torch.tensor([50, 50, 50, 50, 50, 200, 200],
                           device=robot.device, dtype=torch.float32)
 
 def apply_pd(target_pos):
     """Compute and apply PD torques as effort targets."""
     current_pos = robot.data.joint_pos[0:1]
     current_vel = robot.data.joint_vel[0:1]
+    vel_clamped = torch.clamp(current_vel, -10.0, 10.0)
     error = target_pos - current_pos
-    torque = PD_STIFFNESS * error - PD_DAMPING * current_vel
+    torque = PD_STIFFNESS * error - PD_DAMPING * vel_clamped
     torque = torch.clamp(torque, -MAX_EFFORT, MAX_EFFORT)
     robot.set_joint_effort_target(torque)
 

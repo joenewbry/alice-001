@@ -72,6 +72,16 @@ class BallTransferEnv(DirectRLEnv):
         # Kinematic grasp state: tracks whether ball is "attached" to EE
         self._ball_grasped = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
+        # PD gains for effort-based control (PhysX position drives broken for this USDA).
+        # Gains tuned for explicit integration stability at 120Hz:
+        #   K*dt²/I < 2 and D*dt/I < 2 for arm inertia I ∈ [0.002, 0.02] kg·m²
+        self._pd_kp = torch.tensor([40, 40, 40, 40, 40, 2000, 2000],
+                                   device=self.device, dtype=torch.float32)
+        self._pd_kd = torch.tensor([1, 1, 1, 1, 1, 50, 50],
+                                   device=self.device, dtype=torch.float32)
+        self._pd_max_effort = torch.tensor([50, 50, 50, 50, 50, 200, 200],
+                                           device=self.device, dtype=torch.float32)
+
         # Diagnostic: print initial EE and ball positions + joint limits
         ee0 = self._get_ee_pos_local()[0].cpu().numpy()
         ball0 = self._get_ball_pos_local()[0].cpu().numpy()
@@ -177,23 +187,20 @@ class BallTransferEnv(DirectRLEnv):
         self._robot_dof_targets[:] = torch.clamp(targets, self._joint_lower, self._joint_upper)
 
     def _apply_action(self):
-        # Manual PD controller → effort targets (PhysX position drives are broken
-        # for this articulation — position/velocity targets generate zero force,
-        # but effort targets work correctly)
+        # Python PD controller → effort targets (PhysX position drives are broken
+        # for this articulation — only effort targets generate force).
+        # PhysX stiffness/damping set to 0 in config to avoid conflicting springs.
         current_pos = self.robot.data.joint_pos
         current_vel = self.robot.data.joint_vel
         pos_error = self._robot_dof_targets - current_pos
 
-        # Per-joint PD gains (arm joints: moderate, gripper: high)
-        stiffness = torch.tensor([100, 100, 100, 100, 100, 2000, 2000],
-                                 device=self.device, dtype=torch.float32)
-        damping = torch.tensor([10, 10, 10, 10, 10, 100, 100],
-                               device=self.device, dtype=torch.float32)
-        max_effort = torch.tensor([100, 100, 100, 100, 100, 200, 200],
-                                  device=self.device, dtype=torch.float32)
+        # Clamp velocity to prevent damping-term explosion (explicit integration stability)
+        vel_clamped = torch.clamp(current_vel, -10.0, 10.0)
 
-        pd_torque = stiffness * pos_error - damping * current_vel
-        pd_torque = torch.clamp(pd_torque, -max_effort, max_effort)
+        # PD gains tuned for explicit integration at 120Hz with arm inertia ~0.002-0.02 kg·m²
+        # K=40: stable (K*dt²/I < 2), D=1: stable (D*dt/I < 2), overdamped for heavier joints
+        pd_torque = self._pd_kp * pos_error - self._pd_kd * vel_clamped
+        pd_torque = torch.clamp(pd_torque, -self._pd_max_effort, self._pd_max_effort)
         self.robot.set_joint_effort_target(pd_torque)
 
         # ── Kinematic grasp attachment ──

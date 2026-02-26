@@ -55,8 +55,8 @@ ALICE_001_CFG = ArticulationCfg(
                 "wrist_roll_joint",
             ],
             effort_limit_sim=100.0,
-            stiffness=100.0,  # PhysX PD doesn't actually generate force (confirmed by diagnostic)
-            damping=10.0,     # but keeping non-zero prevents NaN. Actual PD runs in Python.
+            stiffness=0.0,   # PhysX position drives broken — zero to avoid conflicting with Python PD
+            damping=0.0,     # All control via set_joint_effort_target() in env._apply_action()
         ),
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=["left_finger_joint", "right_finger_joint"],

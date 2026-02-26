@@ -55,17 +55,21 @@ device = robot.device
 env_ids = torch.tensor([0], device=device)
 
 # ── PD controller (effort-based — PhysX position drives broken) ──
-PD_KP = torch.tensor([100, 100, 100, 100, 100, 2000, 2000], device=device, dtype=torch.float32)
-PD_KD = torch.tensor([10, 10, 10, 10, 10, 100, 100], device=device, dtype=torch.float32)
-MAX_T = torch.tensor([100, 100, 100, 100, 100, 200, 200], device=device, dtype=torch.float32)
+# Gains tuned for explicit integration stability at 120Hz.
+# PhysX stiffness/damping = 0 → no conflicting spring.
+PD_KP = torch.tensor([40, 40, 40, 40, 40, 2000, 2000], device=device, dtype=torch.float32)
+PD_KD = torch.tensor([1, 1, 1, 1, 1, 50, 50], device=device, dtype=torch.float32)
+MAX_T = torch.tensor([50, 50, 50, 50, 50, 200, 200], device=device, dtype=torch.float32)
 
 _pd_step = 0
 def apply_pd(target_pos):
     global _pd_step
     pos = robot.data.joint_pos[0:1]
     vel = robot.data.joint_vel[0:1]
+    # Clamp velocity to prevent damping-term explosion (explicit integration stability)
+    vel_clamped = torch.clamp(vel, -10.0, 10.0)
     error = target_pos - pos
-    torque = PD_KP * error - PD_KD * vel
+    torque = PD_KP * error - PD_KD * vel_clamped
     torque = torch.clamp(torque, -MAX_T, MAX_T)
 
     if _pd_step < 5 or (_pd_step < 30 and _pd_step % 5 == 0):
